@@ -1,0 +1,15 @@
+[package]
+name = "moba"
+version = "0.1.0"
+authors = ["MovingtoMars <liam@bumblebee.net.nz>"]
+
+[dependencies]
+serde = "*"
+serde_derive = "*"
+serde_json = "*"
+byteorder = "*"
+chan = "*"
+piston_window = "*"
+conrod = "*"
+ncollide = "*"
+nalgebra = "*"
