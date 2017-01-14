@@ -58,8 +58,8 @@ impl Renderable for Player {
         ellipse([0.0, 1.0, 0.0, 1.0],
                 [-radius, -radius, radius * 2.0, radius * 2.0],
                 c.transform
-                    .trans(viewport.x_game_to_screen(self.state.position.x),
-                           viewport.y_game_to_screen(self.state.position.y)),
+                    .trans(viewport.x_game_to_screen(self.position.x),
+                           viewport.y_game_to_screen(self.position.y)),
                 g);
     }
 }

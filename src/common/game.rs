@@ -2,7 +2,7 @@ use std::collections::{VecDeque, HashMap};
 use std::ops::{Sub, Deref, DerefMut};
 use na::{Point2, Vector2};
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Hero {
     John,
 }
@@ -21,51 +21,6 @@ impl Hero {
     }
 }
 
-/// Has minimum of one state.
-pub struct StateBuffer<T: Clone> {
-    states: VecDeque<T>,
-    num_states: usize,
-}
-
-impl<T: Clone> StateBuffer<T> {
-    pub fn new(init: T, num_states: usize) -> Self {
-        let mut states = VecDeque::with_capacity(num_states);
-        states.push_front(init);
-        StateBuffer {
-            states: states,
-            num_states: num_states,
-        }
-    }
-
-    pub fn push(&mut self, state: T) -> Option<T> {
-        self.states.push_front(state);
-        if self.states.len() > self.num_states {
-            self.states.pop_back()
-        } else {
-            None
-        }
-    }
-
-    pub fn bump(&mut self) -> Option<T> {
-        let latest_state = self.states[0].clone();
-        self.push(latest_state)
-    }
-}
-
-impl<T: Clone> Deref for StateBuffer<T> {
-    type Target = T;
-
-    fn deref(&self) -> &T {
-        &self.states[0]
-    }
-}
-
-impl<T: Clone> DerefMut for StateBuffer<T> {
-    fn deref_mut(&mut self) -> &mut T {
-        &mut self.states[0]
-    }
-}
-
 
 #[derive(Clone, Debug)]
 pub enum Target {
@@ -77,16 +32,12 @@ pub enum Target {
 pub struct PlayerID(u32);
 
 #[derive(Clone, Debug)]
-pub struct PlayerState {
-    pub position: Point,
-    target: Target,
-}
-
 pub struct Player {
     hero: Hero,
     id: PlayerID,
     name: String,
-    pub state: StateBuffer<PlayerState>,
+    pub position: Point,
+    target: Target,
 }
 
 impl Player {
@@ -103,13 +54,14 @@ impl Player {
     }
 
     pub fn update(&mut self, t: f64) {
-        match self.state.target {
+        match self.target {
             Target::Nothing => {}
             Target::Position(p) => {}
         }
     }
 }
 
+#[derive(Clone)]
 pub struct Game {
     players: Vec<Player>,
     next_player_id: u32,
@@ -130,11 +82,8 @@ impl Game {
             hero: hero,
             id: id,
             name: name,
-            state: StateBuffer::new(PlayerState {
-                                        position: position,
-                                        target: Target::Nothing,
-                                    },
-                                    2),
+            position: position,
+            target: Target::Nothing,
         };
         self.players.push(p);
         id
@@ -155,13 +104,7 @@ impl Game {
     pub fn run_command(&mut self, command: Command, origin: PlayerID) {
         let mut player = self.get_player(origin).unwrap();
         match command {
-            Command::Move(target) => player.state.target = Target::Position(target),
-        }
-    }
-
-    pub fn bump_state(&mut self) {
-        for player in &mut self.players {
-            player.state.bump();
+            Command::Move(target) => player.target = Target::Position(target),
         }
     }
 
