@@ -1,8 +1,9 @@
-use super::{Renderable, Viewport};
+use super::Viewport;
 
 use piston_window::*;
 
-pub trait Particle: Renderable {
+pub trait Particle {
+    fn render(&mut self, viewport: Viewport, Context, &mut G2d);
     fn update(&mut self, world_time: f64);
     fn should_remove(&self) -> bool;
 }
@@ -31,10 +32,7 @@ impl Particle for RightClick {
     fn should_remove(&self) -> bool {
         self.time < 0.0
     }
-}
 
-
-impl Renderable for RightClick {
     fn render(&mut self, viewport: Viewport, c: Context, g: &mut G2d) {
         let radius = 10.0 * self.time / 0.4;
         ellipse([0.0, 0.0, 1.0, 1.0],

@@ -4,14 +4,15 @@ use std::thread;
 use std::time;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
+use ecs;
 
-use common::{self, Message, Stream, Game, Command, Player, Hero, Point, PlayerID};
+use common::{self, Message, Stream, Game, Command, Hero, Point, EntityID};
 
 const TICKS_PER_SECOND: u32 = 200;
 
 pub struct Server {
     game: Game,
-    streams: HashMap<PlayerID, Stream>,
+    streams: HashMap<EntityID, Stream>,
     joining_players: Arc<Mutex<Vec<(Stream, String)>>>,
 }
 
@@ -88,9 +89,12 @@ impl Server {
 
         let mut commands = Vec::new();
 
-        for player in self.game.players() {
-            let id = player.id();
-            let mut stream = self.streams.get_mut(&id).unwrap();
+        for player in self.game.players().into_iter().cloned().collect::<Vec<EntityID>>() {
+
+            // self.world.modify_entity(player, |entity, data| {
+            // });
+
+            let mut stream = self.streams.get_mut(&player).unwrap();
             while let Some(message) = stream.try_get_message().unwrap() {
                 match message {
                     Message::Ping { id } => {
@@ -102,9 +106,16 @@ impl Server {
                             }
                         }
                     }
-                    Message::Quit {} => println!("Quit: {}", player.name()),
+                    Message::Quit {} => {
+                        println!("Quit: {}",
+                                 self.game
+                                     .with_entity_data(player, |entity, data| {
+                                         data.player[entity].name().to_string()
+                                     })
+                                     .unwrap())
+                    }
                     Message::SendChat { message } => {}
-                    Message::Command(command) => commands.push((command, id)),
+                    Message::Command(command) => commands.push((command, player)),
                     _ => {}
                 }
             }

@@ -1,6 +1,7 @@
 use std::collections::{VecDeque, HashMap};
 use std::ops::{Sub, Deref, DerefMut};
 use na::{Point2, Vector2};
+use ecs;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Hero {
@@ -28,84 +29,144 @@ pub enum Target {
     Position(Point),
 }
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub struct PlayerID(u32);
-
 #[derive(Clone, Debug)]
 pub struct Player {
     hero: Hero,
-    id: PlayerID,
     name: String,
-    pub position: Point,
     target: Target,
 }
 
 impl Player {
-    pub fn hero(&self) -> Hero {
-        self.hero
-    }
-
     pub fn name(&self) -> &str {
         &self.name
     }
+}
 
-    pub fn id(&self) -> PlayerID {
-        self.id
-    }
+#[derive(Clone, Debug)]
+pub struct Renderable {
+    pub radius: f64,
+    pub colour: [f32; 4],
+}
 
-    pub fn update(&mut self, t: f64) {
-        match self.target {
-            Target::Nothing => {}
-            Target::Position(p) => {}
-        }
+// TODO: proper conditional impl of Clone depending on component types.
+components! {
+    #[derive(Clone)]
+    struct MyComponents {
+        #[hot] id: EntityID,
+        #[hot] kind: EntityKind,
+        #[hot] position: Point,
+        #[cold] player: Player,
+        #[hot] renderable: Renderable
     }
+}
+
+systems! {
+    #[derive(Clone)]
+    struct MySystems<MyComponents, ()>;
 }
 
 #[derive(Clone)]
 pub struct Game {
-    players: Vec<Player>,
-    next_player_id: u32,
+    entity_ids: Vec<EntityID>,
+    players: Vec<EntityID>,
+    next_entity_id: u32,
+    world: ecs::World<MySystems>,
+    entity_map: HashMap<EntityID, ecs::Entity>,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EntityKind {
+    Hero,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct EntityID(u32);
 
 impl Game {
     pub fn new() -> Self {
         Game {
+            entity_ids: Vec::new(),
             players: Vec::new(),
-            next_player_id: 0,
+            next_entity_id: 0,
+            world: ecs::World::new(),
+            entity_map: HashMap::new(),
         }
     }
 
-    pub fn add_player(&mut self, hero: Hero, name: String, position: Point) -> PlayerID {
-        let id = PlayerID(self.next_player_id);
-        self.next_player_id += 1;
-        let p = Player {
-            hero: hero,
-            id: id,
-            name: name,
-            position: position,
-            target: Target::Nothing,
-        };
-        self.players.push(p);
-        id
-    }
-
-    pub fn get_player(&mut self, id: PlayerID) -> Option<&mut Player> {
-        self.players.iter_mut().find(|p| p.id == id)
-    }
-
-    pub fn players(&self) -> &[Player] {
+    pub fn players(&self) -> &[EntityID] {
         &self.players
     }
 
-    pub fn players_mut(&mut self) -> &mut [Player] {
-        &mut self.players
+    pub fn next_entity_id(&mut self) -> EntityID {
+        let t = self.next_entity_id;
+        self.next_entity_id = self.next_entity_id.checked_add(1).unwrap();
+        EntityID(t)
     }
 
-    pub fn run_command(&mut self, command: Command, origin: PlayerID) {
-        let mut player = self.get_player(origin).unwrap();
-        match command {
-            Command::Move(target) => player.target = Target::Position(target),
-        }
+    pub fn add_player(&mut self, hero: Hero, name: String, position: Point) -> EntityID {
+        let e = self.add_entity(EntityKind::Hero,
+                                |entity: ecs::BuildData<MyComponents>, data: &mut MyComponents| {
+            data.position.add(&entity, position);
+            data.player.add(&entity,
+                            Player {
+                                hero: hero,
+                                name: name,
+                                target: Target::Nothing,
+                            });
+            data.renderable.add(&entity,
+                                Renderable {
+                                    radius: hero.radius(),
+                                    colour: [0.0, 1.0, 0.0, 1.0],
+                                });
+        });
+
+        self.players.push(e);
+        e
+    }
+
+    pub fn add_entity<F>(&mut self, kind: EntityKind, f: F) -> EntityID
+        where F: FnOnce(ecs::BuildData<MyComponents>, &mut MyComponents)
+    {
+        let id = self.next_entity_id();
+
+        let entity = self.world
+            .create_entity(|entity: ecs::BuildData<MyComponents>, data: &mut MyComponents| {
+                // data.position.add(&entity, Position { x: 0.0, y: 0.0 });
+                // data.velocity.add(&entity, Velocity { dx: 1.0, dy: 0.0 });
+                data.id.add(&entity, id);
+                data.kind.add(&entity, kind);
+                f(entity, data)
+            });
+
+        self.entity_map.insert(id, entity);
+        self.entity_ids.push(id);
+
+        id
+    }
+
+    pub fn get_entity(&self, id: EntityID) -> Option<ecs::Entity> {
+        self.entity_map.get(&id).cloned()
+    }
+
+    pub fn entity_ids(&self) -> &[EntityID] {
+        &self.entity_ids
+    }
+
+    pub fn with_entity_data<F, R>(&mut self, id: EntityID, f: F) -> Option<R>
+        where F: FnMut(ecs::EntityData<MyComponents>, &mut MyComponents) -> R
+    {
+        self.world.with_entity_data(self.entity_map.get(&id).unwrap(), f)
+    }
+
+    pub fn run_command(&mut self, command: Command, origin: EntityID) {
+        let mut entity = self.get_entity(origin).unwrap();
+
+        self.world.modify_entity(entity, |entity: ecs::ModifyData<MyComponents>,
+                                  data: &mut MyComponents| {
+            match command {
+                Command::Move(target) => data.player[entity].target = Target::Position(target),
+            }
+        });
     }
 
     pub fn tick(&mut self, time: f64) {}

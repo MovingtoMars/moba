@@ -1,6 +1,7 @@
 use piston_window::*;
+use ecs;
 
-use common::{Player, Point};
+use common::{MyComponents, Player, Point};
 
 pub mod particle;
 
@@ -47,19 +48,19 @@ impl Viewport {
     }
 }
 
-pub trait Renderable {
-    fn render(&mut self, viewport: Viewport, Context, &mut G2d);
-}
+pub fn render(viewport: Viewport,
+              c: Context,
+              g: &mut G2d,
+              entity: ecs::EntityData<MyComponents>,
+              data: &mut MyComponents) {
+    if let Some(r) = data.renderable.get(&entity) {
+        let radius = viewport.d_game_to_screen(r.radius);
 
-impl Renderable for Player {
-    fn render(&mut self, viewport: Viewport, c: Context, g: &mut G2d) {
-        let radius = viewport.d_game_to_screen(self.hero().radius());
-
-        ellipse([0.0, 1.0, 0.0, 1.0],
+        ellipse(r.colour,
                 [-radius, -radius, radius * 2.0, radius * 2.0],
                 c.transform
-                    .trans(viewport.x_game_to_screen(self.position.x),
-                           viewport.y_game_to_screen(self.position.y)),
+                    .trans(viewport.x_game_to_screen(data.position[entity].x),
+                           viewport.y_game_to_screen(data.position[entity].y)),
                 g);
     }
 }

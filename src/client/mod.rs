@@ -8,17 +8,17 @@ use std::sync::{Arc, Mutex};
 use piston_window::{self, Transformed, Window, Event, Input, Button, MouseButton,
                     MouseCursorEvent, Motion};
 
-use common::{self, Stream, Message, Game, Player, PlayerID, Hero, Point, Command};
+use common::{self, Stream, Message, Game, Player, Hero, Point, Command, EntityID};
 
 mod render;
-use self::render::{particle, Renderable};
+use self::render::particle;
 
 pub struct Client {
     name: String,
     game: Game,
     viewport: render::Viewport,
     particles: Vec<Box<particle::Particle>>,
-    id: Option<PlayerID>,
+    id: Option<EntityID>,
     stream: Option<Stream>,
     pending_commands: Vec<Command>,
     game_mouse_x: f64,
@@ -81,10 +81,21 @@ impl Client {
                         // piston_window::rectangle([1.0, 0.0, 0.0, 1.0], // red
                         //                          [0.0, 0.0, 100.0, 100.0],
                         //                          c.transform,
-                        //                          g);
+                        //
 
-                        for player in self.game.players_mut() {
-                            player.render(self.viewport, c, g);
+                        {
+                            // well this looks a bit bad zzz
+                            let entities = self.game
+                                .entity_ids()
+                                .into_iter()
+                                .cloned()
+                                .collect::<Vec<EntityID>>();
+                            let viewport = self.viewport;
+                            for e in entities {
+                                self.game.with_entity_data(e, |entity, data| {
+                                    render::render(viewport, c, g, entity, data);
+                                });
+                            }
                         }
 
                         for p in &mut self.particles {

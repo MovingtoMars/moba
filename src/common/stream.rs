@@ -6,7 +6,7 @@ use std::io::{self, Read, Write};
 use std::collections::VecDeque;
 use std::thread;
 use chan;
-use common::{Command, PlayerID};
+use common::{Command, EntityID};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Message {
@@ -19,7 +19,7 @@ pub enum Message {
     SendChat { message: String },
     ReceiveChat { user: String, message: String },
     Command(Command),
-    CommandByPlayer { command: Command, player: PlayerID },
+    CommandByPlayer { command: Command, player: EntityID },
 }
 
 #[derive(Clone)]
