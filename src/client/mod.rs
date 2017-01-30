@@ -76,6 +76,10 @@ impl Client {
                     let dur_since_last_render = last_render_time.elapsed();
                     last_render_time = time::Instant::now();
 
+                    // self.game.clone();
+                    // self.game.clone();
+                    // self.game.clone();
+
                     window.draw_2d(&e, |c, g| {
                         piston_window::clear([1.0; 4], g);
                         // piston_window::rectangle([1.0, 0.0, 0.0, 1.0], // red

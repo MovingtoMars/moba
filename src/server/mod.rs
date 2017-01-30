@@ -8,7 +8,7 @@ use ecs;
 
 use common::{self, Message, Stream, Game, Command, Hero, Point, EntityID};
 
-const TICKS_PER_SECOND: u32 = 200;
+const TICKS_PER_SECOND: u32 = 60;
 
 pub struct Server {
     game: Game,
@@ -50,7 +50,7 @@ impl Server {
             // println!("Starting tick {}", id);
             let start_time = time::Instant::now();
 
-            self.tick();
+            self.tick(1.0 / TICKS_PER_SECOND as f64);
 
             let elapsed_tick_dur = start_time.elapsed();
             if elapsed_tick_dur < tick_dur {
@@ -69,7 +69,7 @@ impl Server {
         }
     }
 
-    fn tick(&mut self) {
+    fn tick(&mut self, time: f64) {
         let new_names = {
             let mut jp = self.joining_players.lock().unwrap();
             let new_names = jp.iter().map(|p| p.1.clone()).collect::<Vec<String>>();
@@ -124,6 +124,8 @@ impl Server {
         for (command, id) in commands {
             self.game.run_command(command, id);
         }
+
+        self.game.tick(time);
     }
 }
 

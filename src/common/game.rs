@@ -48,6 +48,17 @@ pub struct Renderable {
     pub colour: [f32; 4],
 }
 
+#[derive(Clone, Debug)]
+pub struct Velocity {
+    raw: Point,
+}
+
+impl Velocity {
+    pub fn new(x: f64, y: f64) -> Self {
+        Velocity { raw: Point::new(x, y) }
+    }
+}
+
 // TODO: proper conditional impl of Clone depending on component types.
 components! {
     #[derive(Clone)]
@@ -56,16 +67,38 @@ components! {
         #[hot] kind: EntityKind,
         #[hot] position: Point,
         #[cold] player: Player,
-        #[hot] renderable: Renderable
+        #[hot] renderable: Renderable,
+        #[hot] velocity: Velocity,
+    }
+}
+
+pub struct UpdateVelocityProcess;
+
+impl ecs::System for UpdateVelocityProcess {
+    type Components = MyComponents;
+    type Services = ();
+}
+
+impl ecs::system::EntityProcess for UpdateVelocityProcess {
+    fn process(&mut self,
+               entities: ecs::EntityIter<MyComponents>,
+               data: &mut ecs::DataHelper<MyComponents, ()>) {
+
     }
 }
 
 systems! {
-    #[derive(Clone)]
-    struct MySystems<MyComponents, ()>;
+    struct MySystems<MyComponents, ()> {
+        active: {
+            motion: ecs::system::EntitySystem<UpdateVelocityProcess> = ecs::system::EntitySystem::new(
+                UpdateVelocityProcess,
+                aspect!(<MyComponents> all: [position, velocity])
+            ),
+        },
+        passive: {}
+    }
 }
 
-#[derive(Clone)]
 pub struct Game {
     entity_ids: Vec<EntityID>,
     players: Vec<EntityID>,
@@ -93,6 +126,19 @@ impl Game {
         }
     }
 
+    // pub fn clone_into(&self, other: Game) -> Game {
+    //     Game {
+    //         entity_ids: self.entity_ids.clone(),
+    //         entity_map: self.entity_map.clone(),
+    //         next_entity_id: self.next_entity_id,
+    //         world: ecs::World {
+    //             systems: other.world.systems,
+    //             data: self.world.data.clone(),
+    //         },
+    //         players: self.players.clone(),
+    //     }
+    // }
+
     pub fn players(&self) -> &[EntityID] {
         &self.players
     }
@@ -118,6 +164,7 @@ impl Game {
                                     radius: hero.radius(),
                                     colour: [0.0, 1.0, 0.0, 1.0],
                                 });
+            data.velocity.add(&entity, Velocity::new(0.0, 0.0));
         });
 
         self.players.push(e);
