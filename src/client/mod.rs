@@ -126,12 +126,11 @@ impl Client {
                 }
 
                 Event::Input(input) => self.handle_input(input),
-
                 _ => {}
             };
         }
 
-        Ok(())
+        self.stream.as_mut().unwrap().write_message(Message::Quit)
     }
 
     fn handle_input(&mut self, input: Input) {
@@ -164,6 +163,7 @@ impl Client {
                     _ => {}
                 }
             }
+            Input::Close => /* ? */ {},
             _ => {}
         }
     }
