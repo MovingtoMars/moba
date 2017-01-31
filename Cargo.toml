@@ -13,4 +13,4 @@ piston_window = "*"
 conrod = "*"
 ncollide = "*"
 nalgebra = "*"
-ecs = {path = "../ecs-rs"}
+specs = "*"

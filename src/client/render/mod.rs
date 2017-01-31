@@ -1,7 +1,7 @@
 use piston_window::*;
-use ecs;
+use specs;
 
-use common::{MyComponents, Player, Point};
+use common::{self, Player, Point};
 
 pub mod particle;
 
@@ -51,16 +51,21 @@ impl Viewport {
 pub fn render(viewport: Viewport,
               c: Context,
               g: &mut G2d,
-              entity: ecs::EntityData<MyComponents>,
-              data: &mut MyComponents) {
-    if let Some(r) = data.renderable.get(&entity) {
+              entity: specs::Entity,
+              world: &mut specs::World) {
+    let (r_component, pos_component) = (world.read::<common::Renderable>(),
+                                        world.read::<common::Point>());
+
+    if let Some(r) = r_component.get(entity) {
         let radius = viewport.d_game_to_screen(r.radius);
+
+        let position = pos_component.get(entity).unwrap();
 
         ellipse(r.colour,
                 [-radius, -radius, radius * 2.0, radius * 2.0],
                 c.transform
-                    .trans(viewport.x_game_to_screen(data.position[entity].x),
-                           viewport.y_game_to_screen(data.position[entity].y)),
+                    .trans(viewport.x_game_to_screen(position.x),
+                           viewport.y_game_to_screen(position.y)),
                 g);
     }
 }

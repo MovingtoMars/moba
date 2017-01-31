@@ -11,8 +11,7 @@ extern crate piston_window;
 extern crate conrod;
 extern crate nalgebra as na;
 extern crate ncollide;
-#[macro_use]
-extern crate ecs;
+extern crate specs;
 
 pub mod common;
 pub mod client;

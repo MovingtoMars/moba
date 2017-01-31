@@ -96,9 +96,8 @@ impl Client {
                                 .collect::<Vec<EntityID>>();
                             let viewport = self.viewport;
                             for e in entities {
-                                self.game.with_entity_data(e, |entity, data| {
-                                    render::render(viewport, c, g, entity, data);
-                                });
+                                let e = self.game.get_entity(e).unwrap();
+                                render::render(viewport, c, g, e, self.game.mut_world());
                             }
                         }
 

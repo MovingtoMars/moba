@@ -1,7 +1,7 @@
 use std::collections::{VecDeque, HashMap};
 use std::ops::{Sub, Deref, DerefMut};
 use na::{Point2, Vector2};
-use ecs;
+use specs;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Hero {
@@ -29,11 +29,20 @@ pub enum Target {
     Position(Point),
 }
 
+impl specs::Component for Target {
+    type Storage = specs::HashMapStorage<Target>;
+}
+
+
 #[derive(Clone, Debug)]
 pub struct Player {
     hero: Hero,
     name: String,
     target: Target,
+}
+
+impl specs::Component for Player {
+    type Storage = specs::HashMapStorage<Player>;
 }
 
 impl Player {
@@ -48,9 +57,17 @@ pub struct Renderable {
     pub colour: [f32; 4],
 }
 
+impl specs::Component for Renderable {
+    type Storage = specs::VecStorage<Renderable>;
+}
+
 #[derive(Clone, Debug)]
 pub struct Velocity {
     raw: Point,
+}
+
+impl specs::Component for Velocity {
+    type Storage = specs::VecStorage<Velocity>;
 }
 
 impl Velocity {
@@ -59,85 +76,51 @@ impl Velocity {
     }
 }
 
-// TODO: proper conditional impl of Clone depending on component types.
-components! {
-    #[derive(Clone)]
-    struct MyComponents {
-        #[hot] id: EntityID,
-        #[hot] kind: EntityKind,
-        #[hot] position: Point,
-        #[cold] player: Player,
-        #[hot] renderable: Renderable,
-        #[hot] velocity: Velocity,
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EntityKind {
+    Hero,
 }
 
-pub struct UpdateVelocityProcess;
-
-impl ecs::System for UpdateVelocityProcess {
-    type Components = MyComponents;
-    type Services = ();
+impl specs::Component for EntityKind {
+    type Storage = specs::VecStorage<EntityKind>;
 }
 
-impl ecs::system::EntityProcess for UpdateVelocityProcess {
-    fn process(&mut self,
-               entities: ecs::EntityIter<MyComponents>,
-               data: &mut ecs::DataHelper<MyComponents, ()>) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct EntityID(u32);
 
-    }
-}
-
-systems! {
-    struct MySystems<MyComponents, ()> {
-        active: {
-            motion: ecs::system::EntitySystem<UpdateVelocityProcess> = ecs::system::EntitySystem::new(
-                UpdateVelocityProcess,
-                aspect!(<MyComponents> all: [position, velocity])
-            ),
-        },
-        passive: {}
-    }
+impl specs::Component for EntityID {
+    type Storage = specs::VecStorage<EntityID>;
 }
 
 pub struct Game {
     entity_ids: Vec<EntityID>,
     players: Vec<EntityID>,
     next_entity_id: u32,
-    world: ecs::World<MySystems>,
-    entity_map: HashMap<EntityID, ecs::Entity>,
+    entity_map: HashMap<EntityID, specs::Entity>,
+    planner: specs::Planner<()>,
 }
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum EntityKind {
-    Hero,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct EntityID(u32);
 
 impl Game {
     pub fn new() -> Self {
+        let mut w = specs::World::new();
+        w.register::<EntityID>();
+        w.register::<EntityKind>();
+        w.register::<Point>();
+        w.register::<Player>();
+        w.register::<Renderable>();
+        w.register::<Velocity>();
+        w.register::<Target>();
+
+        let planner = specs::Planner::new(w, 4);
+
         Game {
             entity_ids: Vec::new(),
             players: Vec::new(),
             next_entity_id: 0,
-            world: ecs::World::new(),
             entity_map: HashMap::new(),
+            planner: planner,
         }
     }
-
-    // pub fn clone_into(&self, other: Game) -> Game {
-    //     Game {
-    //         entity_ids: self.entity_ids.clone(),
-    //         entity_map: self.entity_map.clone(),
-    //         next_entity_id: self.next_entity_id,
-    //         world: ecs::World {
-    //             systems: other.world.systems,
-    //             data: self.world.data.clone(),
-    //         },
-    //         players: self.players.clone(),
-    //     }
-    // }
 
     pub fn players(&self) -> &[EntityID] {
         &self.players
@@ -150,21 +133,19 @@ impl Game {
     }
 
     pub fn add_player(&mut self, hero: Hero, name: String, position: Point) -> EntityID {
-        let e = self.add_entity(EntityKind::Hero,
-                                |entity: ecs::BuildData<MyComponents>, data: &mut MyComponents| {
-            data.position.add(&entity, position);
-            data.player.add(&entity,
-                            Player {
-                                hero: hero,
-                                name: name,
-                                target: Target::Nothing,
-                            });
-            data.renderable.add(&entity,
-                                Renderable {
-                                    radius: hero.radius(),
-                                    colour: [0.0, 1.0, 0.0, 1.0],
-                                });
-            data.velocity.add(&entity, Velocity::new(0.0, 0.0));
+        let e = self.add_entity(EntityKind::Hero, |entity| {
+            entity.with(position)
+                .with(Player {
+                    hero: hero,
+                    name: name,
+                    target: Target::Nothing,
+                })
+                .with(Renderable {
+                    radius: hero.radius(),
+                    colour: [0.0, 1.0, 0.0, 1.0],
+                })
+                .with(Velocity::new(0.0, 0.0))
+                .with(Target::Nothing)
         });
 
         self.players.push(e);
@@ -172,18 +153,14 @@ impl Game {
     }
 
     pub fn add_entity<F>(&mut self, kind: EntityKind, f: F) -> EntityID
-        where F: FnOnce(ecs::BuildData<MyComponents>, &mut MyComponents)
+        where F: FnOnce(specs::EntityBuilder<()>) -> specs::EntityBuilder<()>
     {
         let id = self.next_entity_id();
 
-        let entity = self.world
-            .create_entity(|entity: ecs::BuildData<MyComponents>, data: &mut MyComponents| {
-                // data.position.add(&entity, Position { x: 0.0, y: 0.0 });
-                // data.velocity.add(&entity, Velocity { dx: 1.0, dy: 0.0 });
-                data.id.add(&entity, id);
-                data.kind.add(&entity, kind);
-                f(entity, data)
-            });
+        let mut entity = self.planner.mut_world().create_now();
+        let entity = entity.with(kind).with(id);
+        let entity = f(entity);
+        let entity = entity.build();
 
         self.entity_map.insert(id, entity);
         self.entity_ids.push(id);
@@ -191,7 +168,7 @@ impl Game {
         id
     }
 
-    pub fn get_entity(&self, id: EntityID) -> Option<ecs::Entity> {
+    pub fn get_entity(&self, id: EntityID) -> Option<specs::Entity> {
         self.entity_map.get(&id).cloned()
     }
 
@@ -199,21 +176,56 @@ impl Game {
         &self.entity_ids
     }
 
-    pub fn with_entity_data<F, R>(&mut self, id: EntityID, f: F) -> Option<R>
-        where F: FnMut(ecs::EntityData<MyComponents>, &mut MyComponents) -> R
+    pub fn run_custom<F>(&mut self, f: F)
+        where F: 'static + Send + FnOnce(specs::RunArg)
     {
-        self.world.with_entity_data(self.entity_map.get(&id).unwrap(), f)
+        self.planner.run_custom(f)
+    }
+
+    pub fn mut_world(&mut self) -> &mut specs::World {
+        self.planner.mut_world()
+    }
+
+    pub fn with_component<T: specs::Component, U, F>(&mut self, e: EntityID, f: F) -> Option<U>
+        where F: FnOnce(&T) -> U
+    {
+        let entity = match self.entity_map.get(&e) {
+            Some(&entity) => entity,
+            None => return None,
+        };
+
+        let mut world = self.planner.mut_world();
+        let mut storage = world.read::<T>();
+        let component = match storage.get(entity) {
+            Some(x) => x,
+            None => return None,
+        };
+
+        Some(f(component))
+    }
+
+    pub fn clone_component<T: specs::Component + Clone>(&mut self, e: EntityID) -> Option<T> {
+        self.with_component::<T, _, _>(e, |c| c.clone())
     }
 
     pub fn run_command(&mut self, command: Command, origin: EntityID) {
         let mut entity = self.get_entity(origin).unwrap();
 
-        self.world.modify_entity(entity, |entity: ecs::ModifyData<MyComponents>,
-                                  data: &mut MyComponents| {
-            match command {
-                Command::Move(target) => data.player[entity].target = Target::Position(target),
+        // self.world.modify_entity(entity, |entity: ecs::ModifyData<MyComponents>,
+        //                           data: &mut MyComponents| {
+        //     match command {
+        //         Command::Move(target) => data.player[entity].target = Target::Position(target),
+        //     }
+        // });
+
+        match command {
+            Command::Move(target) => {
+                self.run_custom(move |arg| {
+                    let mut t = arg.fetch(|world| world.write::<Target>());
+                    *t.get_mut(entity).unwrap() = Target::Position(target)
+                });
             }
-        });
+        }
     }
 
     pub fn tick(&mut self, time: f64) {}
@@ -223,6 +235,10 @@ impl Game {
 pub struct Point {
     pub x: f64,
     pub y: f64,
+}
+
+impl specs::Component for Point {
+    type Storage = specs::VecStorage<Point>;
 }
 
 impl Point {

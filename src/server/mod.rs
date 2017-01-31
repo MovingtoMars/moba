@@ -4,7 +4,6 @@ use std::thread;
 use std::time;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use ecs;
 
 use common::{self, Message, Stream, Game, Command, Hero, Point, EntityID};
 
@@ -109,8 +108,8 @@ impl Server {
                     Message::Quit {} => {
                         println!("Quit: {}",
                                  self.game
-                                     .with_entity_data(player, |entity, data| {
-                                         data.player[entity].name().to_string()
+                                     .with_component::<common::Player, _, _>(player, |c| {
+                                         c.name().to_string()
                                      })
                                      .unwrap())
                     }
