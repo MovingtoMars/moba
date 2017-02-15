@@ -50,7 +50,10 @@ impl Client {
         self.stream.as_mut().unwrap().write_message(Message::Command(command)).unwrap();
     }
 
-    fn run(&mut self, current_ping: Arc<Mutex<u64>>) -> io::Result<()> {
+    fn run(&mut self,
+           current_ping: Arc<Mutex<u64>>,
+           events: Arc<Mutex<Vec<common::Event>>>)
+           -> io::Result<()> {
         self.id = Some(self.game.add_player(Hero::John, self.name.clone(), Point::new(0.0, 0.0)));
 
         let mut window: piston_window::PistonWindow =
@@ -70,6 +73,13 @@ impl Client {
 
         while let Some(e) = window.next() {
             let piston_window::Size { width, height } = window.draw_size();
+
+            {
+                let mut events_handle = events.lock().unwrap();
+                for ev in events_handle.drain(..) {
+                    self.game.run_event(ev);
+                }
+            }
 
             match e {
                 Event::Render(_) => {
@@ -175,9 +185,11 @@ impl Client {
         let name = self.name.clone();
 
         let mut current_ping = Arc::new(Mutex::new(0));
+        let mut events = Arc::new(Mutex::new(Vec::new()));
 
         {
             let current_ping = current_ping.clone();
+            let events = events.clone();
 
             thread::spawn(move || {
                 stream.write_message(Message::Connect { name: name }).expect("1");
@@ -229,13 +241,17 @@ impl Client {
                             }
                             println!("{}", message);
                         }
+                        Message::Events(mut e) => {
+                            events.lock().unwrap().append(&mut e);
+                            // let () = e;
+                        }
                         _ => {}
                     }
                 }
             });
         }
 
-        self.run(current_ping)
+        self.run(current_ping, events)
     }
 }
 

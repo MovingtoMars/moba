@@ -1,7 +1,17 @@
 use std::collections::{VecDeque, HashMap};
 use std::ops::{Sub, Deref, DerefMut};
+use std::sync::{Arc, Mutex};
 use na::{Point2, Vector2};
-use specs;
+use specs::{self, Join};
+
+#[derive(Debug, Clone)]
+pub struct Position {
+    pub point: Point,
+}
+
+impl specs::Component for Position {
+    type Storage = specs::VecStorage<Position>;
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Hero {
@@ -17,7 +27,7 @@ impl Hero {
 
     pub fn speed(self) -> f64 {
         match self {
-            Hero::John => 100.0,
+            Hero::John => 200.0,
         }
     }
 }
@@ -27,10 +37,6 @@ impl Hero {
 pub enum Target {
     Nothing,
     Position(Point),
-}
-
-impl specs::Component for Target {
-    type Storage = specs::HashMapStorage<Target>;
 }
 
 
@@ -62,18 +68,23 @@ impl specs::Component for Renderable {
 }
 
 #[derive(Clone, Debug)]
+pub struct Unit {
+    speed: f64,
+    target: Target,
+}
+
+impl specs::Component for Unit {
+    type Storage = specs::VecStorage<Unit>;
+}
+
+#[derive(Clone, Debug)]
 pub struct Velocity {
-    raw: Point,
+    x: f64,
+    y: f64,
 }
 
 impl specs::Component for Velocity {
     type Storage = specs::VecStorage<Velocity>;
-}
-
-impl Velocity {
-    pub fn new(x: f64, y: f64) -> Self {
-        Velocity { raw: Point::new(x, y) }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -92,12 +103,89 @@ impl specs::Component for EntityID {
     type Storage = specs::VecStorage<EntityID>;
 }
 
+pub struct UpdateVelocitySystem;
+
+impl specs::System<Context> for UpdateVelocitySystem {
+    fn run(&mut self, arg: specs::RunArg, c: Context) {
+        let (unitc, mut velocityc, positionc, idc, playerc) = arg.fetch(|w| {
+            (w.read::<Unit>(),
+             w.write::<Velocity>(),
+             w.read::<Position>(),
+             w.read::<EntityID>(),
+             w.read::<Player>())
+        });
+
+        for (unit, velocity, player, position) in
+            (&unitc, &mut velocityc, &playerc, &positionc).iter() {
+            let mut speed = unit.speed;
+
+            *velocity = match unit.target {
+                Target::Nothing => Velocity { x: 0.0, y: 0.0 },
+                Target::Position(p) => {
+                    let dx = p.x - position.point.x;
+                    let dy = p.y - position.point.y;
+                    let d = (dx * dx + dy * dy).sqrt();
+                    if speed * c.time > d {
+                        speed = d;
+                    }
+                    let mut ratio = speed / d;
+
+                    Velocity {
+                        x: ratio * dx,
+                        y: ratio * dy,
+                    }
+                }
+            };
+        }
+    }
+}
+
+pub struct MotionSystem;
+
+impl specs::System<Context> for MotionSystem {
+    fn run(&mut self, arg: specs::RunArg, c: Context) {
+        let (idc, velocityc, mut positionc) =
+            arg.fetch(|w| (w.read::<EntityID>(), w.read::<Velocity>(), w.write::<Position>()));
+
+        for (&id, velocity, mut position) in (&idc, &velocityc, &mut positionc).iter() {
+            let x = position.point.x + velocity.x * c.time;
+            let y = position.point.y + velocity.y * c.time;
+
+            let event = Event::EntityMove(id, Point::new(x, y));
+            c.push_event(event);
+        }
+    }
+}
+
+pub struct ContextInner {
+    events: Vec<Event>,
+}
+
+#[derive(Clone)]
+pub struct Context {
+    time: f64,
+    inner: Arc<Mutex<ContextInner>>,
+}
+
+impl Context {
+    fn new(time: f64) -> Self {
+        Context {
+            time: time,
+            inner: Arc::new(Mutex::new(ContextInner { events: Vec::new() })),
+        }
+    }
+
+    fn push_event(&self, event: Event) {
+        self.inner.lock().unwrap().events.push(event);
+    }
+}
+
 pub struct Game {
     entity_ids: Vec<EntityID>,
     players: Vec<EntityID>,
     next_entity_id: u32,
     entity_map: HashMap<EntityID, specs::Entity>,
-    planner: specs::Planner<()>,
+    planner: specs::Planner<Context>,
 }
 
 impl Game {
@@ -105,13 +193,16 @@ impl Game {
         let mut w = specs::World::new();
         w.register::<EntityID>();
         w.register::<EntityKind>();
-        w.register::<Point>();
+        w.register::<Position>();
         w.register::<Player>();
-        w.register::<Renderable>();
+        w.register::<Unit>();
         w.register::<Velocity>();
-        w.register::<Target>();
+        w.register::<Renderable>();
 
-        let planner = specs::Planner::new(w, 4);
+        let mut planner = specs::Planner::new(w, 4);
+
+        planner.add_system(UpdateVelocitySystem, "UpdateVelocitySystem", 100);
+        planner.add_system(MotionSystem, "MotionSystem", 99);
 
         Game {
             entity_ids: Vec::new(),
@@ -134,7 +225,7 @@ impl Game {
 
     pub fn add_player(&mut self, hero: Hero, name: String, position: Point) -> EntityID {
         let e = self.add_entity(EntityKind::Hero, |entity| {
-            entity.with(position)
+            entity.with(Position { point: position })
                 .with(Player {
                     hero: hero,
                     name: name,
@@ -144,8 +235,11 @@ impl Game {
                     radius: hero.radius(),
                     colour: [0.0, 1.0, 0.0, 1.0],
                 })
-                .with(Velocity::new(0.0, 0.0))
-                .with(Target::Nothing)
+                .with(Unit {
+                    speed: hero.speed(),
+                    target: Target::Nothing,
+                })
+                .with(Velocity { x: 0.0, y: 0.0 })
         });
 
         self.players.push(e);
@@ -221,24 +315,47 @@ impl Game {
         match command {
             Command::Move(target) => {
                 self.run_custom(move |arg| {
-                    let mut t = arg.fetch(|world| world.write::<Target>());
-                    *t.get_mut(entity).unwrap() = Target::Position(target)
+                    let mut t = arg.fetch(|world| world.write::<Unit>());
+                    t.get_mut(entity).unwrap().target = Target::Position(target)
                 });
             }
         }
     }
 
-    pub fn tick(&mut self, time: f64) {}
+    pub fn run_event(&mut self, event: Event) {
+        match event {
+            Event::EntityMove(id, point) => {
+                let e = self.get_entity(id).unwrap();
+                self.run_custom(move |arg| {
+                    let mut posc = arg.fetch(|w| w.write::<Position>());
+                    posc.get_mut(e).unwrap().point = point;
+                });
+            }
+        }
+    }
+
+    pub fn run_events(&mut self, events: &[Event]) {
+        for e in events {
+            self.run_event(e.clone());
+        }
+    }
+
+    pub fn tick(&mut self, time: f64) -> Vec<Event> {
+        let context = Context::new(time);
+        self.planner.dispatch(context.clone());
+        self.planner.wait();
+
+        let events = context.inner.lock().unwrap().events.clone();
+
+        self.run_events(&events);
+        events
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub struct Point {
     pub x: f64,
     pub y: f64,
-}
-
-impl specs::Component for Point {
-    type Storage = specs::VecStorage<Point>;
 }
 
 impl Point {
@@ -282,4 +399,9 @@ impl From<Vector2<f64>> for Point {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Command {
     Move(Point),
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum Event {
+    EntityMove(EntityID, Point),
 }

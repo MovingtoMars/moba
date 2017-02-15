@@ -124,7 +124,9 @@ impl Server {
             self.game.run_command(command, id);
         }
 
-        self.game.tick(time);
+        let events = self.game.tick(time);
+
+        self.broadcast(Message::Events(events));
     }
 }
 

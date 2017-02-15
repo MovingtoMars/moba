@@ -54,7 +54,7 @@ pub fn render(viewport: Viewport,
               entity: specs::Entity,
               world: &mut specs::World) {
     let (r_component, pos_component) = (world.read::<common::Renderable>(),
-                                        world.read::<common::Point>());
+                                        world.read::<common::Position>());
 
     if let Some(r) = r_component.get(entity) {
         let radius = viewport.d_game_to_screen(r.radius);
@@ -64,8 +64,8 @@ pub fn render(viewport: Viewport,
         ellipse(r.colour,
                 [-radius, -radius, radius * 2.0, radius * 2.0],
                 c.transform
-                    .trans(viewport.x_game_to_screen(position.x),
-                           viewport.y_game_to_screen(position.y)),
+                    .trans(viewport.x_game_to_screen(position.point.x),
+                           viewport.y_game_to_screen(position.point.y)),
                 g);
     }
 }
