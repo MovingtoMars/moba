@@ -4,14 +4,7 @@ use std::sync::{Arc, Mutex};
 use na::{Point2, Vector2};
 use specs::{self, Join};
 
-#[derive(Debug, Clone)]
-pub struct Position {
-    pub point: Point,
-}
-
-impl specs::Component for Position {
-    type Storage = specs::VecStorage<Position>;
-}
+use common::*;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Hero {
@@ -37,147 +30,6 @@ impl Hero {
 pub enum Target {
     Nothing,
     Position(Point),
-}
-
-
-#[derive(Clone, Debug)]
-pub struct Player {
-    hero: Hero,
-    name: String,
-    target: Target,
-}
-
-impl specs::Component for Player {
-    type Storage = specs::HashMapStorage<Player>;
-}
-
-impl Player {
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Renderable {
-    pub radius: f64,
-    pub colour: [f32; 4],
-}
-
-impl specs::Component for Renderable {
-    type Storage = specs::VecStorage<Renderable>;
-}
-
-#[derive(Clone, Debug)]
-pub struct Unit {
-    speed: f64,
-    target: Target,
-}
-
-impl specs::Component for Unit {
-    type Storage = specs::VecStorage<Unit>;
-}
-
-#[derive(Clone, Debug)]
-pub struct Velocity {
-    x: f64,
-    y: f64,
-}
-
-impl specs::Component for Velocity {
-    type Storage = specs::VecStorage<Velocity>;
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum EntityKind {
-    Hero,
-}
-
-impl specs::Component for EntityKind {
-    type Storage = specs::VecStorage<EntityKind>;
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct EntityID(u32);
-
-impl specs::Component for EntityID {
-    type Storage = specs::VecStorage<EntityID>;
-}
-
-pub struct UpdateVelocitySystem;
-
-impl specs::System<Context> for UpdateVelocitySystem {
-    fn run(&mut self, arg: specs::RunArg, c: Context) {
-        let (unitc, mut velocityc, positionc, idc, playerc) = arg.fetch(|w| {
-            (w.read::<Unit>(),
-             w.write::<Velocity>(),
-             w.read::<Position>(),
-             w.read::<EntityID>(),
-             w.read::<Player>())
-        });
-
-        for (unit, velocity, player, position) in
-            (&unitc, &mut velocityc, &playerc, &positionc).iter() {
-            let mut speed = unit.speed;
-
-            *velocity = match unit.target {
-                Target::Nothing => Velocity { x: 0.0, y: 0.0 },
-                Target::Position(p) => {
-                    let dx = p.x - position.point.x;
-                    let dy = p.y - position.point.y;
-                    let d = (dx * dx + dy * dy).sqrt();
-                    if speed * c.time > d {
-                        speed = d;
-                    }
-                    let mut ratio = speed / d;
-
-                    Velocity {
-                        x: ratio * dx,
-                        y: ratio * dy,
-                    }
-                }
-            };
-        }
-    }
-}
-
-pub struct MotionSystem;
-
-impl specs::System<Context> for MotionSystem {
-    fn run(&mut self, arg: specs::RunArg, c: Context) {
-        let (idc, velocityc, mut positionc) =
-            arg.fetch(|w| (w.read::<EntityID>(), w.read::<Velocity>(), w.write::<Position>()));
-
-        for (&id, velocity, mut position) in (&idc, &velocityc, &mut positionc).iter() {
-            let x = position.point.x + velocity.x * c.time;
-            let y = position.point.y + velocity.y * c.time;
-
-            let event = Event::EntityMove(id, Point::new(x, y));
-            c.push_event(event);
-        }
-    }
-}
-
-pub struct ContextInner {
-    events: Vec<Event>,
-}
-
-#[derive(Clone)]
-pub struct Context {
-    time: f64,
-    inner: Arc<Mutex<ContextInner>>,
-}
-
-impl Context {
-    fn new(time: f64) -> Self {
-        Context {
-            time: time,
-            inner: Arc::new(Mutex::new(ContextInner { events: Vec::new() })),
-        }
-    }
-
-    fn push_event(&self, event: Event) {
-        self.inner.lock().unwrap().events.push(event);
-    }
 }
 
 pub struct Game {
@@ -345,7 +197,7 @@ impl Game {
         self.planner.dispatch(context.clone());
         self.planner.wait();
 
-        let events = context.inner.lock().unwrap().events.clone();
+        let events = context.events();
 
         self.run_events(&events);
         events
