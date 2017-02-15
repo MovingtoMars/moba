@@ -5,8 +5,8 @@ use std::thread;
 use std::time;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use piston_window::{self, Transformed, Window, Event, Input, Button, MouseButton,
-                    MouseCursorEvent, Motion};
+use piston_window::{self, Transformed, Window, Input, Button, MouseButton, MouseCursorEvent,
+                    Motion};
 
 use common::{self, Stream, Message, Game, Player, Hero, Point, Command, EntityID};
 
@@ -82,7 +82,7 @@ impl Client {
             }
 
             match e {
-                Event::Render(_) => {
+                Input::Render(_) => {
                     let dur_since_last_render = last_render_time.elapsed();
                     last_render_time = time::Instant::now();
 
@@ -134,8 +134,34 @@ impl Client {
                         self.particles.retain(|p| !p.should_remove());
                     });
                 }
-
-                Event::Input(input) => self.handle_input(input),
+                Input::Move(motion) => {
+                    match motion {
+                        Motion::MouseCursor(x, y) => {
+                            self.screen_mouse_x = x;
+                            self.screen_mouse_y = y;
+                            self.game_mouse_x = self.viewport.x_screen_to_game(x);
+                            self.game_mouse_y = self.viewport.y_screen_to_game(y);
+                        }
+                        _ => {}
+                    }
+                }
+                Input::Press(button) => {
+                    match button {
+                        Button::Mouse(mouse_button) => {
+                            match mouse_button {
+                                MouseButton::Right => {
+                                    let x = self.game_mouse_x;
+                                    let y = self.game_mouse_y;
+                                    self.run_command(Command::Move(Point::new(x, y)));
+                                    self.particles
+                                        .push(Box::new(particle::RightClick::new(x, y)))
+                                }
+                                _ => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 _ => {}
             };
         }
@@ -145,35 +171,7 @@ impl Client {
 
     fn handle_input(&mut self, input: Input) {
         match input {
-            Input::Move(motion) => {
-                match motion {
-                    Motion::MouseCursor(x, y) => {
-                        self.screen_mouse_x = x;
-                        self.screen_mouse_y = y;
-                        self.game_mouse_x = self.viewport.x_screen_to_game(x);
-                        self.game_mouse_y = self.viewport.y_screen_to_game(y);
-                    }
-                    _ => {}
-                }
-            }
-            Input::Press(button) => {
-                match button {
-                    Button::Mouse(mouse_button) => {
-                        match mouse_button {
-                            MouseButton::Right => {
-                                let x = self.game_mouse_x;
-                                let y = self.game_mouse_y;
-                                self.run_command(Command::Move(Point::new(x, y)));
-                                self.particles
-                                    .push(Box::new(particle::RightClick::new(x, y)))
-                            }
-                            _ => {}
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            Input::Close => /* ? */ {},
+
             _ => {}
         }
     }
