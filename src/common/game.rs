@@ -6,7 +6,7 @@ use specs::{self, Join};
 
 use common::*;
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug, PartialEq, Eq)]
 pub enum Hero {
     John,
 }
@@ -75,8 +75,13 @@ impl Game {
         EntityID(t)
     }
 
-    pub fn add_player(&mut self, hero: Hero, name: String, position: Point) -> EntityID {
-        let e = self.add_entity(EntityKind::Hero, |entity| {
+    pub fn add_player(&mut self,
+                      id: EntityID,
+                      hero: Hero,
+                      name: String,
+                      position: Point)
+                      -> EntityID {
+        let e = self.add_entity(id, EntityKind::Hero, |entity| {
             entity.with(Position { point: position })
                 .with(Player {
                     hero: hero,
@@ -98,11 +103,9 @@ impl Game {
         e
     }
 
-    pub fn add_entity<F>(&mut self, kind: EntityKind, f: F) -> EntityID
+    pub fn add_entity<F>(&mut self, id: EntityID, kind: EntityKind, f: F) -> EntityID
         where F: FnOnce(specs::EntityBuilder<()>) -> specs::EntityBuilder<()>
     {
-        let id = self.next_entity_id();
-
         let mut entity = self.planner.mut_world().create_now();
         let entity = entity.with(kind).with(id);
         let entity = f(entity);
@@ -175,6 +178,7 @@ impl Game {
     }
 
     pub fn run_event(&mut self, event: Event) {
+        println!("{:?}", event);
         match event {
             Event::EntityMove(id, point) => {
                 let e = self.get_entity(id).unwrap();
@@ -182,6 +186,9 @@ impl Game {
                     let mut posc = arg.fetch(|w| w.write::<Position>());
                     posc.get_mut(e).unwrap().point = point;
                 });
+            }
+            Event::AddHero { id, hero, position, name } => {
+                self.add_player(id, hero, name, position);
             }
         }
     }
@@ -200,6 +207,35 @@ impl Game {
         let events = context.events();
 
         self.run_events(&events);
+        events
+    }
+
+    pub fn events_for_loading(&mut self) -> Vec<Event> {
+        let mut events = Vec::new();
+
+        for &id in &self.entity_ids {
+            let e = self.get_entity(id).unwrap();
+            let world = self.planner.mut_world();
+            let kind = *world.read::<EntityKind>().get(e).unwrap();
+
+            let playerc = world.read::<Player>();
+            let posc = world.read::<Position>();
+
+            match kind {
+                EntityKind::Hero => {
+                    let player = playerc.get(e).unwrap();
+                    let pos = posc.get(e).unwrap().point;
+
+                    events.push(Event::AddHero {
+                        id: id,
+                        hero: player.hero,
+                        position: pos,
+                        name: player.name().into(),
+                    });
+                }
+            }
+        }
+
         events
     }
 }
@@ -256,4 +292,10 @@ pub enum Command {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Event {
     EntityMove(EntityID, Point),
+    AddHero {
+        id: EntityID,
+        position: Point,
+        hero: Hero,
+        name: String,
+    },
 }

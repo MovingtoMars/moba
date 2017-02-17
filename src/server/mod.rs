@@ -5,7 +5,7 @@ use std::time;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
-use common::{self, Message, Stream, Game, Command, Hero, Point, EntityID};
+use common::{self, Message, Stream, Game, Command, Hero, Point, EntityID, Event};
 
 const TICKS_PER_SECOND: u32 = 60;
 
@@ -70,11 +70,29 @@ impl Server {
 
     fn tick(&mut self, time: f64) {
         let new_names = {
-            let mut jp = self.joining_players.lock().unwrap();
+            let mut jp = {
+                let mut x = self.joining_players.lock().unwrap();
+                let y = x.clone();
+                x.clear();
+                y
+            };
+
             let new_names = jp.iter().map(|p| p.1.clone()).collect::<Vec<String>>();
-            for (stream, name) in jp.drain(..) {
-                let id = self.game.add_player(Hero::John, name, Point::new(0.0, 0.0));
+            for (mut stream, name) in jp {
+                let id = self.game.next_entity_id();
+                let pos = Point::new(0.0, 0.0);
+                let hero = Hero::John;
+                stream.write_message(Message::SetPlayerEntityID(id)).unwrap();
+                stream.write_message(Message::Events(self.game.events_for_loading()));
+                self.game.add_player(id, hero, name.clone(), pos);
                 self.streams.insert(id, stream);
+                self.broadcast(Message::Events(vec![Event::AddHero {
+                                                        id: id,
+                                                        hero: hero,
+                                                        position: pos,
+                                                        name: name,
+                                                    }]));
+
             }
             new_names
         };

@@ -21,6 +21,7 @@ pub enum Message {
     Command(Command),
     CommandByPlayer { command: Command, player: EntityID },
     Events(Vec<Event>),
+    SetPlayerEntityID(EntityID),
 }
 
 #[derive(Clone)]

@@ -73,8 +73,13 @@ impl specs::System<Context> for MotionSystem {
             arg.fetch(|w| (w.read::<EntityID>(), w.read::<Velocity>(), w.write::<Position>()));
 
         for (&id, velocity, mut position) in (&idc, &velocityc, &mut positionc).iter() {
-            let x = position.point.x + velocity.x * c.time;
-            let y = position.point.y + velocity.y * c.time;
+            let dx = velocity.x * c.time;
+            let dy = velocity.y * c.time;
+            if dx.abs() < 0.1 && dy.abs() < 0.1 {
+                continue;
+            }
+            let x = position.point.x + dx;
+            let y = position.point.y + dy;
 
             let event = Event::EntityMove(id, Point::new(x, y));
             c.push_event(event);

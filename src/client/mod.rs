@@ -52,9 +52,10 @@ impl Client {
 
     fn run(&mut self,
            current_ping: Arc<Mutex<u64>>,
-           events: Arc<Mutex<Vec<common::Event>>>)
+           events: Arc<Mutex<Vec<common::Event>>>,
+           player_entity_id: Arc<Mutex<Option<EntityID>>>)
            -> io::Result<()> {
-        self.id = Some(self.game.add_player(Hero::John, self.name.clone(), Point::new(0.0, 0.0)));
+        // self.id = Some(self.game.add_player(Hero::John, self.name.clone(), Point::new(0.0, 0.0)));
 
         let mut window: piston_window::PistonWindow =
             piston_window::WindowSettings::new("moba", [1280, 720])
@@ -73,6 +74,12 @@ impl Client {
 
         while let Some(e) = window.next() {
             let piston_window::Size { width, height } = window.draw_size();
+
+            if self.id.is_none() {
+                if let Some(id) = *player_entity_id.lock().unwrap() {
+                    self.id = Some(id);
+                }
+            }
 
             {
                 let mut events_handle = events.lock().unwrap();
@@ -184,10 +191,12 @@ impl Client {
 
         let mut current_ping = Arc::new(Mutex::new(0));
         let mut events = Arc::new(Mutex::new(Vec::new()));
+        let mut player_entity_id = Arc::new(Mutex::new(None));
 
         {
             let current_ping = current_ping.clone();
             let events = events.clone();
+            let player_entity_id = player_entity_id.clone();
 
             thread::spawn(move || {
                 stream.write_message(Message::Connect { name: name }).expect("1");
@@ -196,12 +205,16 @@ impl Client {
                 match message {
                     Message::AcceptConnection { message } => {
                         println!("Connection successful: {}", message);
-
                     }
                     _ => {
-                        println!("Connection unsuccessful.");
-                        return;
+                        panic!("Connection unsuccessful.");
                     }
+                }
+
+                let message = stream.get_message().unwrap();
+                match message {
+                    Message::SetPlayerEntityID(id) => *player_entity_id.lock().unwrap() = Some(id),
+                    _ => panic!("Connection unsuccessful. (2)"),
                 }
 
                 let mut ping_store = Arc::new(Mutex::new(PingStore::new()));
@@ -249,7 +262,7 @@ impl Client {
             });
         }
 
-        self.run(current_ping, events)
+        self.run(current_ping, events, player_entity_id)
     }
 }
 
