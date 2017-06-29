@@ -55,11 +55,9 @@ impl Stream {
         {
             let mut reader = stream.reader.clone();
             let mut incoming = stream.incoming.clone();
-            thread::spawn(move || {
-                loop {
-                    let packet = read_packet(&mut reader.lock().unwrap()).unwrap();
-                    send.send(decode_message(&packet));
-                }
+            thread::spawn(move || loop {
+                let packet = read_packet(&mut reader.lock().unwrap()).unwrap();
+                send.send(decode_message(&packet));
             });
         }
 

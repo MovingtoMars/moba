@@ -25,6 +25,8 @@ pub struct Client {
     game_mouse_y: f64,
     screen_mouse_x: f64,
     screen_mouse_y: f64,
+    selected_entity_id: Option<EntityID>,
+    hovered_entity_id: Option<EntityID>,
 }
 
 impl Client {
@@ -42,20 +44,27 @@ impl Client {
 
             screen_mouse_x: 0.0,
             screen_mouse_y: 0.0,
+
+            selected_entity_id: None,
+            hovered_entity_id: None,
         }
     }
 
     fn run_command(&mut self, command: Command) {
         self.game.run_command(command.clone(), self.id.unwrap());
-        self.stream.as_mut().unwrap().write_message(Message::Command(command)).unwrap();
+        self.stream
+            .as_mut()
+            .unwrap()
+            .write_message(Message::Command(command))
+            .unwrap();
     }
 
-    fn run(&mut self,
-           current_ping: Arc<Mutex<u64>>,
-           events: Arc<Mutex<Vec<common::Event>>>,
-           player_entity_id: Arc<Mutex<Option<EntityID>>>)
-           -> io::Result<()> {
-        // self.id = Some(self.game.add_player(Hero::John, self.name.clone(), Point::new(0.0, 0.0)));
+    fn run(
+        &mut self,
+        current_ping: Arc<Mutex<u64>>,
+        events: Arc<Mutex<Vec<common::Event>>>,
+        player_entity_id: Arc<Mutex<Option<EntityID>>>,
+    ) -> io::Result<()> {
 
         let mut window: piston_window::PistonWindow =
             piston_window::WindowSettings::new("moba", [1280, 720])
@@ -65,10 +74,7 @@ impl Client {
                 .build()
                 .unwrap();
 
-        let mut glyphs =
-            piston_window::Glyphs::new("./assets/fonts/NotoSans-unhinted/NotoSans-Regular.ttf",
-                                       window.factory.clone())
-                .unwrap();
+        let mut fonts = render::Fonts::new(window.factory.clone());
 
         let mut last_render_time = time::Instant::now();
 
@@ -90,6 +96,14 @@ impl Client {
 
             match e {
                 Input::Render(_) => {
+                    // HACK
+                    if let Some(id) = self.id {
+                        self.game.with_component_mut::<common::Renderable, _, _>(
+                            id,
+                            |r| r.colour = [0.0, 0.0, 1.0, 1.0],
+                        );
+                    }
+
                     let dur_since_last_render = last_render_time.elapsed();
                     last_render_time = time::Instant::now();
 
@@ -105,16 +119,17 @@ impl Client {
                         //
 
                         {
-                            // well this looks a bit bad zzz
-                            let entities = self.game
-                                .entity_ids()
-                                .into_iter()
-                                .cloned()
-                                .collect::<Vec<EntityID>>();
                             let viewport = self.viewport;
-                            for e in entities {
+                            for e in self.game.entity_ids_cloned() {
                                 let e = self.game.get_entity(e).unwrap();
-                                render::render(viewport, c, g, e, self.game.mut_world());
+                                render::render(
+                                    viewport,
+                                    c,
+                                    g,
+                                    &mut fonts,
+                                    e,
+                                    self.game.mut_world(),
+                                );
                             }
                         }
 
@@ -122,20 +137,38 @@ impl Client {
                             (&mut **p).render(self.viewport, c, g)
                         }
 
-                        piston_window::text([0.0, 0.0, 0.0, 1.0],
-                                            14,
-                                            &format!("Ping: {}",
-                                                     std::cmp::min(*current_ping.lock().unwrap(),
-                                                                   999)),
-                                            &mut glyphs,
-                                            c.transform.trans(width as f64 - 80.0, 15.0),
-                                            g);
+                        piston_window::text(
+                            [0.0, 0.0, 0.0, 1.0],
+                            14,
+                            &format!(
+                                "Ping: {}",
+                                std::cmp::min(*current_ping.lock().unwrap(), 999)
+                            ),
+                            &mut fonts.regular,
+                            c.transform.trans(width as f64 - 80.0, 15.0),
+                            g,
+                        );
+
+                        piston_window::text(
+                            [0.0, 0.0, 0.0, 1.0],
+                            14,
+                            &format!(
+                                "Selected: {:?}    Hovered: {:?}",
+                                self.selected_entity_id,
+                                self.hovered_entity_id
+                            ),
+                            &mut fonts.regular,
+                            c.transform.trans(5.0, 15.0),
+                            g,
+                        );
 
 
 
                         for p in &mut self.particles {
-                            p.update(dur_since_last_render.as_secs() as f64 +
-                                     dur_since_last_render.subsec_nanos() as f64 / 1000000000.0);
+                            p.update(
+                                dur_since_last_render.as_secs() as f64 +
+                                    dur_since_last_render.subsec_nanos() as f64 / 1000000000.0,
+                            );
                         }
 
                         self.particles.retain(|p| !p.should_remove());
@@ -148,6 +181,7 @@ impl Client {
                             self.screen_mouse_y = y;
                             self.game_mouse_x = self.viewport.x_screen_to_game(x);
                             self.game_mouse_y = self.viewport.y_screen_to_game(y);
+                            self.hovered_entity_id = self.entity_under_cursor();
                         }
                         _ => {}
                     }
@@ -156,6 +190,9 @@ impl Client {
                     match button {
                         Button::Mouse(mouse_button) => {
                             match mouse_button {
+                                MouseButton::Left => {
+                                    self.selected_entity_id = self.entity_under_cursor();
+                                }
                                 MouseButton::Right => {
                                     let x = self.game_mouse_x;
                                     let y = self.game_mouse_y;
@@ -174,6 +211,17 @@ impl Client {
         }
 
         self.stream.as_mut().unwrap().write_message(Message::Quit)
+    }
+
+    fn entity_under_cursor(&mut self) -> Option<EntityID> {
+        for e in self.game.entity_ids_cloned() {
+            if self.game
+                .entity_contains_point(e, self.game_mouse_x, self.game_mouse_y)
+            {
+                return Some(e);
+            }
+        }
+        None
     }
 
     fn handle_input(&mut self, input: Input) {
@@ -199,7 +247,9 @@ impl Client {
             let player_entity_id = player_entity_id.clone();
 
             thread::spawn(move || {
-                stream.write_message(Message::Connect { name: name }).expect("1");
+                stream
+                    .write_message(Message::Connect { name: name })
+                    .expect("1");
 
                 let message = stream.get_message().unwrap();
                 match message {
@@ -222,13 +272,11 @@ impl Client {
                 {
                     let mut stream = stream.clone();
                     let mut ping_store = ping_store.clone();
-                    thread::spawn(move || {
-                        loop {
-                            stream.write_message(Message::Ping {
-                                id: ping_store.lock().unwrap().start_ping(),
-                            });
-                            thread::sleep(time::Duration::from_secs(1));
-                        }
+                    thread::spawn(move || loop {
+                        stream.write_message(Message::Ping {
+                            id: ping_store.lock().unwrap().start_ping(),
+                        });
+                        thread::sleep(time::Duration::from_secs(1));
                     });
                 }
 
@@ -242,7 +290,7 @@ impl Client {
                         Message::ReturnPing { id } => {
                             let dur = ping_store.lock().unwrap().end_ping(id).unwrap();
                             let ping_ms = dur.as_secs() * 1000 +
-                                          (dur.subsec_nanos() / 1000000) as u64;
+                                (dur.subsec_nanos() / 1000000) as u64;
                             *current_ping.lock().unwrap() = ping_ms;
                             // println!("Ping: {}ms", ping_ms);
                         }

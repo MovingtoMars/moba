@@ -1,5 +1,9 @@
 use specs;
 use common::*;
+use ncollide;
+use na;
+
+type Shape = ncollide::shape::Shape<na::Point2<f64>, na::Isometry2<f64>>;
 
 #[derive(Debug, Clone)]
 pub struct Position {
@@ -10,6 +14,30 @@ impl specs::Component for Position {
     type Storage = specs::VecStorage<Position>;
 }
 
+pub struct Hitbox {
+    pub shape: Box<Shape>,
+}
+
+impl specs::Component for Hitbox {
+    type Storage = specs::VecStorage<Hitbox>;
+}
+
+impl Hitbox {
+    pub fn new<S: ncollide::shape::Shape<na::Point2<f64>, na::Isometry2<f64>>>(shape: S) -> Self {
+        Hitbox { shape: Box::new(shape) }
+    }
+
+    pub fn new_ball(radius: f64) -> Self {
+        Hitbox::new(ncollide::shape::Ball::new(radius))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Projectile {}
+
+impl specs::Component for Projectile {
+    type Storage = specs::HashMapStorage<Projectile>;
+}
 
 #[derive(Clone, Debug)]
 pub struct Player {
@@ -61,6 +89,7 @@ impl specs::Component for Velocity {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EntityKind {
     Hero,
+    Projectile,
 }
 
 impl specs::Component for EntityKind {

@@ -12,6 +12,7 @@ extern crate conrod;
 extern crate nalgebra as na;
 extern crate ncollide;
 extern crate specs;
+extern crate gfx_device_gl;
 
 pub mod common;
 pub mod client;

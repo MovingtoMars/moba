@@ -1,5 +1,7 @@
 use piston_window::*;
+use piston_window::character::CharacterCache;
 use specs;
+use gfx_device_gl::Factory;
 
 use common::{self, Player, Point};
 
@@ -48,24 +50,69 @@ impl Viewport {
     }
 }
 
-pub fn render(viewport: Viewport,
-              c: Context,
-              g: &mut G2d,
-              entity: specs::Entity,
-              world: &mut specs::World) {
-    let (r_component, pos_component) = (world.read::<common::Renderable>(),
-                                        world.read::<common::Position>());
+pub struct Fonts {
+    pub regular: Glyphs,
+    pub bold: Glyphs,
+}
+
+impl Fonts {
+    pub fn new(factory: Factory) -> Self {
+        let regular = Glyphs::new(
+            "./assets/fonts/NotoSans-unhinted/NotoSans-Regular.ttf",
+            factory.clone(),
+        ).unwrap();
+
+        let bold = Glyphs::new(
+            "./assets/fonts/NotoSans-unhinted/NotoSans-Bold.ttf",
+            factory.clone(),
+        ).unwrap();
+
+        Fonts { regular, bold }
+    }
+}
+
+pub fn render(
+    viewport: Viewport,
+    c: Context,
+    g: &mut G2d,
+    fonts: &mut Fonts,
+    entity: specs::Entity,
+    world: &mut specs::World,
+) {
+    let (r_component, pos_component, player_component) = (
+        world.read::<common::Renderable>(),
+        world.read::<common::Position>(),
+        world.read::<common::Player>(),
+    );
 
     if let Some(r) = r_component.get(entity) {
         let radius = viewport.d_game_to_screen(r.radius);
 
         let position = pos_component.get(entity).unwrap();
 
-        ellipse(r.colour,
-                [-radius, -radius, radius * 2.0, radius * 2.0],
-                c.transform
-                    .trans(viewport.x_game_to_screen(position.point.x),
-                           viewport.y_game_to_screen(position.point.y)),
-                g);
+        let sx = viewport.x_game_to_screen(position.point.x);
+        let sy = viewport.y_game_to_screen(position.point.y);
+
+        ellipse(
+            r.colour,
+            [-radius, -radius, radius * 2.0, radius * 2.0],
+            c.transform.trans(sx, sy),
+            g,
+        );
+
+        if let Some(p) = player_component.get(entity) {
+            let size = 16;
+            let name = &p.name;
+            let width = fonts.bold.width(size, name);
+
+            text(
+                [0.0, 0.0, 0.0, 1.0],
+                size,
+                name,
+                &mut fonts.bold,
+                c.transform.trans(sx - width / 2.0, sy - radius * 1.4),
+                g,
+            );
+        }
     }
 }

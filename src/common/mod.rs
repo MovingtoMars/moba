@@ -7,12 +7,7 @@ use std::collections::VecDeque;
 use std::thread;
 use chan;
 
-
 pub const DEFAULT_PORT: u16 = 26137;
-
-pub fn common_function() {
-    println!("Working!");
-}
 
 mod stream;
 pub use self::stream::*;

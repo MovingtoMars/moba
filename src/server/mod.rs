@@ -27,7 +27,7 @@ impl Server {
     pub fn serve(&mut self, port: u16) {
         let jp = self.joining_players.clone();
         thread::spawn(move || {
-            let addr = net::SocketAddrV4::new(net::Ipv4Addr::new(127, 0, 0, 1), port);
+            let addr = net::SocketAddrV4::new(net::Ipv4Addr::new(127, 0, 0, 1), port); // change to 0.0.0.0 to accept from all locations
 
             let listener = TcpListener::bind(addr).unwrap();
 
@@ -82,16 +82,20 @@ impl Server {
                 let id = self.game.next_entity_id();
                 let pos = Point::new(0.0, 0.0);
                 let hero = Hero::John;
-                stream.write_message(Message::SetPlayerEntityID(id)).unwrap();
+                stream
+                    .write_message(Message::SetPlayerEntityID(id))
+                    .unwrap();
                 stream.write_message(Message::Events(self.game.events_for_loading()));
                 self.game.add_player(id, hero, name.clone(), pos);
                 self.streams.insert(id, stream);
-                self.broadcast(Message::Events(vec![Event::AddHero {
-                                                        id: id,
-                                                        hero: hero,
-                                                        position: pos,
-                                                        name: name,
-                                                    }]));
+                self.broadcast(Message::Events(vec![
+                    Event::AddHero {
+                        id: id,
+                        hero: hero,
+                        position: pos,
+                        name: name,
+                    },
+                ]));
 
             }
             new_names
@@ -106,7 +110,12 @@ impl Server {
 
         let mut commands = Vec::new();
 
-        for player in self.game.players().into_iter().cloned().collect::<Vec<EntityID>>() {
+        for player in self.game
+            .players()
+            .into_iter()
+            .cloned()
+            .collect::<Vec<EntityID>>()
+        {
 
             // self.world.modify_entity(player, |entity, data| {
             // });
@@ -124,12 +133,15 @@ impl Server {
                         }
                     }
                     Message::Quit {} => {
-                        println!("Quit: {}",
-                                 self.game
-                                     .with_component::<common::Player, _, _>(player, |c| {
-                                         c.name().to_string()
-                                     })
-                                     .unwrap())
+                        println!(
+                            "Quit: {}",
+                            self.game
+                                .with_component::<common::Player, _, _>(
+                                    player,
+                                    |c| { c.name().to_string() }
+                                )
+                                .unwrap()
+                        )
                     }
                     Message::SendChat { message } => {}
                     Message::Command(command) => commands.push((command, player)),
@@ -148,9 +160,10 @@ impl Server {
     }
 }
 
-fn handle_client(mut stream: TcpStream,
-                 joining_players: Arc<Mutex<Vec<(Stream, String)>>>)
-                 -> io::Result<()> {
+fn handle_client(
+    mut stream: TcpStream,
+    joining_players: Arc<Mutex<Vec<(Stream, String)>>>,
+) -> io::Result<()> {
     println!("Connection from {}", stream.peer_addr().unwrap());
     let mut stream = common::Stream::new(stream);
 
@@ -166,7 +179,10 @@ fn handle_client(mut stream: TcpStream,
         }
     };
 
-    stream.write_message(Message::AcceptConnection { message: "Welcome to moba alpha.".into() })?;
+    stream
+        .write_message(Message::AcceptConnection {
+            message: "Welcome to moba alpha.".into(),
+        })?;
 
     joining_players.lock().unwrap().push((stream, name));
     Ok(())

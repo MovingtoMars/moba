@@ -33,15 +33,16 @@ pub struct UpdateVelocitySystem;
 impl specs::System<Context> for UpdateVelocitySystem {
     fn run(&mut self, arg: specs::RunArg, c: Context) {
         let (unitc, mut velocityc, positionc, idc, playerc) = arg.fetch(|w| {
-            (w.read::<Unit>(),
-             w.write::<Velocity>(),
-             w.read::<Position>(),
-             w.read::<EntityID>(),
-             w.read::<Player>())
+            (
+                w.read::<Unit>(),
+                w.write::<Velocity>(),
+                w.read::<Position>(),
+                w.read::<EntityID>(),
+                w.read::<Player>(),
+            )
         });
 
-        for (unit, velocity, player, position) in
-            (&unitc, &mut velocityc, &playerc, &positionc).iter() {
+        for (unit, velocity, position) in (&unitc, &mut velocityc, &positionc).iter() {
             let mut speed = unit.speed;
 
             *velocity = match unit.target {
@@ -69,8 +70,13 @@ pub struct MotionSystem;
 
 impl specs::System<Context> for MotionSystem {
     fn run(&mut self, arg: specs::RunArg, c: Context) {
-        let (idc, velocityc, mut positionc) =
-            arg.fetch(|w| (w.read::<EntityID>(), w.read::<Velocity>(), w.write::<Position>()));
+        let (idc, velocityc, mut positionc) = arg.fetch(|w| {
+            (
+                w.read::<EntityID>(),
+                w.read::<Velocity>(),
+                w.write::<Position>(),
+            )
+        });
 
         for (&id, velocity, mut position) in (&idc, &velocityc, &mut positionc).iter() {
             let dx = velocity.x * c.time;
