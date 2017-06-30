@@ -3,7 +3,6 @@ use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::sync::{Arc, Mutex};
 use std::net::TcpStream;
 use std::io::{self, Read, Write};
-use std::collections::VecDeque;
 use std::thread;
 use chan;
 use common::{Command, EntityID, Event};
@@ -28,7 +27,7 @@ pub enum Message {
 pub struct Stream {
     reader: Arc<Mutex<TcpStream>>,
     writer: Arc<Mutex<TcpStream>>,
-    incoming: chan::Receiver<Message>,
+    incoming: chan::Receiver<io::Result<Message>>,
 }
 
 fn read_packet(stream: &mut TcpStream) -> io::Result<String> {
@@ -38,7 +37,7 @@ fn read_packet(stream: &mut TcpStream) -> io::Result<String> {
 
     stream.read_exact(&mut buf)?;
 
-    Ok(String::from_utf8(buf).unwrap())
+    Ok(String::from_utf8(buf).unwrap()) // XXX
 }
 
 impl Stream {
@@ -56,8 +55,17 @@ impl Stream {
             let mut reader = stream.reader.clone();
             let mut incoming = stream.incoming.clone();
             thread::spawn(move || loop {
-                let packet = read_packet(&mut reader.lock().unwrap()).unwrap();
-                send.send(decode_message(&packet));
+                let packet = read_packet(&mut reader.lock().unwrap());
+                let packet = packet.map(|packet| decode_message(&packet));
+
+                match packet {
+                    Ok(Message::Quit) |
+                    Err(_) => {
+                        send.send(packet);
+                        return;
+                    }
+                    _ => send.send(packet),
+                }
             });
         }
 
@@ -68,16 +76,16 @@ impl Stream {
         self.write_packet(&encode_message(message))
     }
 
-    pub fn try_get_message(&self) -> io::Result<Option<Message>> {
+    pub fn try_get_message(&self) -> Option<io::Result<Message>> {
         let inc = &self.incoming;
         chan_select! {
-            default => return Ok(None),
-            inc.recv() -> val => return Ok(Some(val.unwrap())),
+            default => return None,
+            inc.recv() -> val => return Some(val.unwrap()),
         };
     }
 
     pub fn get_message(&self) -> io::Result<Message> {
-        Ok(self.incoming.recv().unwrap())
+        self.incoming.recv().unwrap()
     }
 
     fn write_packet(&mut self, s: &str) -> io::Result<()> {

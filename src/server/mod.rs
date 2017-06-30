@@ -109,20 +109,19 @@ impl Server {
         }
 
         let mut commands = Vec::new();
+        let mut events = Vec::new();
+        let mut players_to_remove = Vec::new();
 
-        for player in self.game
-            .players()
-            .into_iter()
-            .cloned()
-            .collect::<Vec<EntityID>>()
-        {
-
-            // self.world.modify_entity(player, |entity, data| {
-            // });
-
+        for player in self.game.players().to_owned() {
             let mut stream = self.streams.get_mut(&player).unwrap();
-            while let Some(message) = stream.try_get_message().unwrap() {
-                match message {
+            while let Some(message) = stream.try_get_message() {
+                if let Err(err) = message {
+                    println!("Error from client stream: {:?}", err);
+                    players_to_remove.push(player);
+                    break;
+                }
+
+                match message.unwrap() {
                     Message::Ping { id } => {
                         match stream.write_message(Message::ReturnPing { id: id }) {
                             Ok(()) => {}
@@ -141,7 +140,10 @@ impl Server {
                                     |c| { c.name().to_string() }
                                 )
                                 .unwrap()
-                        )
+                        );
+
+                        players_to_remove.push(player);
+                        break;
                     }
                     Message::SendChat { message } => {}
                     Message::Command(command) => commands.push((command, player)),
@@ -150,11 +152,16 @@ impl Server {
             }
         }
 
+        for player in players_to_remove {
+            self.streams.remove(&player);
+            events.push(self.game.remove_player(player));
+        }
+
         for (command, id) in commands {
             self.game.run_command(command, id);
         }
 
-        let events = self.game.tick(time);
+        events.extend(self.game.tick(time));
 
         self.broadcast(Message::Events(events));
     }

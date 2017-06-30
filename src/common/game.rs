@@ -70,6 +70,24 @@ impl Game {
         }
     }
 
+    pub fn remove_player(&mut self, id: EntityID) -> Event {
+        if !self.players.contains(&id) {
+            panic!("removed non-existent player");
+        }
+
+        self.players.retain(|&p| p != id);
+
+        self.remove_entity(id)
+    }
+
+    pub fn remove_entity(&mut self, id: EntityID) -> Event {
+        self.entity_ids.retain(|&x| x != id);
+        let e = self.entity_map.lock().unwrap().remove(&id).unwrap();
+        self.planner.mut_world().delete_later(e);
+
+        Event::RemoveEntity(id)
+    }
+
     pub fn players(&self) -> &[EntityID] {
         &self.players
     }
@@ -251,12 +269,10 @@ impl Game {
         match command {
             Command::SetTarget(target) => {
                 self.run_custom(move |arg| {
-                    let (mut tc, idc) =
-                        arg.fetch(|world| (world.write::<Unit>(), world.read::<EntityID>()));
-                    let this_entity_id = *idc.get(entity).unwrap();
+                    let mut tc = arg.fetch(|world| world.write::<Unit>());
 
                     tc.get_mut(entity).unwrap().target = match target {
-                        Target::Entity(id) if id == this_entity_id => Target::Nothing, // XXX error?
+                        Target::Entity(id) if id == origin => Target::Nothing, // XXX error?
                         x => x,
                     };
                 });
@@ -267,6 +283,10 @@ impl Game {
     pub fn run_event(&mut self, event: Event) {
         println!("{:?}", event);
         match event {
+            Event::RemoveEntity(id) => {
+                let e = self.get_entity(id).unwrap();
+                self.planner.mut_world().delete_later(e);
+            }
             Event::EntityMove(id, point) => {
                 let e = self.get_entity(id).unwrap();
                 self.run_custom(move |arg| {
@@ -413,4 +433,5 @@ pub enum Event {
         position: Point,
         target: Target,
     },
+    RemoveEntity(EntityID),
 }
