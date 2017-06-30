@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
 use common::*;
@@ -52,7 +52,7 @@ impl specs::System<Context> for UpdateVelocitySystem {
         });
 
         for (unit, velocity, position) in (&unitc, &mut velocityc, &positionc).iter() {
-            let mut speed = unit.speed;
+            let speed = unit.speed;
 
             *velocity = match unit.target {
                 Target::Nothing => Velocity { x: 0.0, y: 0.0 },
@@ -88,15 +88,15 @@ pub struct MotionSystem;
 
 impl specs::System<Context> for MotionSystem {
     fn run(&mut self, arg: specs::RunArg, c: Context) {
-        let (idc, velocityc, mut positionc) = arg.fetch(|w| {
+        let (idc, velocityc, positionc) = arg.fetch(|w| {
             (
                 w.read::<EntityID>(),
                 w.read::<Velocity>(),
-                w.write::<Position>(),
+                w.read::<Position>(),
             )
         });
 
-        for (&id, velocity, mut position) in (&idc, &velocityc, &mut positionc).iter() {
+        for (&id, velocity, position) in (&idc, &velocityc, &positionc).iter() {
             let dx = velocity.x * c.time;
             let dy = velocity.y * c.time;
             if dx.abs() < 0.1 && dy.abs() < 0.1 {

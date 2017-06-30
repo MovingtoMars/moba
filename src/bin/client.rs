@@ -1,7 +1,6 @@
 extern crate moba;
 
 use std::net;
-use moba::common;
 
 fn main() {
     println!("Alpha Client");

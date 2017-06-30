@@ -5,8 +5,7 @@ use std::thread;
 use std::time;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use piston_window::{self, Transformed, Window, Input, Button, MouseButton, MouseCursorEvent,
-                    Motion};
+use piston_window::{self, Transformed, Window, Input, Button, MouseButton, Motion};
 
 use common::*;
 
@@ -20,7 +19,6 @@ pub struct Client {
     particles: Vec<Box<particle::Particle>>,
     id: Option<EntityID>,
     stream: Option<Stream>,
-    pending_commands: Vec<Command>,
     game_mouse_x: f64,
     game_mouse_y: f64,
     screen_mouse_x: f64,
@@ -38,7 +36,6 @@ impl Client {
             particles: Vec::new(),
             id: None,
             stream: None,
-            pending_commands: Vec::new(),
             game_mouse_x: 0.0,
             game_mouse_y: 0.0,
 
@@ -256,9 +253,9 @@ impl Client {
 
         let name = self.name.clone();
 
-        let mut current_ping = Arc::new(Mutex::new(0));
-        let mut events = Arc::new(Mutex::new(Vec::new()));
-        let mut player_entity_id = Arc::new(Mutex::new(None));
+        let current_ping = Arc::new(Mutex::new(0));
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let player_entity_id = Arc::new(Mutex::new(None));
 
         {
             let current_ping = current_ping.clone();
@@ -286,15 +283,17 @@ impl Client {
                     _ => panic!("Connection unsuccessful. (2)"),
                 }
 
-                let mut ping_store = Arc::new(Mutex::new(PingStore::new()));
+                let ping_store = Arc::new(Mutex::new(PingStore::new()));
 
                 {
                     let mut stream = stream.clone();
-                    let mut ping_store = ping_store.clone();
+                    let ping_store = ping_store.clone();
                     thread::spawn(move || loop {
-                        stream.write_message(Message::Ping {
-                            id: ping_store.lock().unwrap().start_ping(),
-                        });
+                        stream
+                            .write_message(Message::Ping {
+                                id: ping_store.lock().unwrap().start_ping(),
+                            })
+                            .unwrap();
                         thread::sleep(time::Duration::from_secs(1));
                     });
                 }

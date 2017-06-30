@@ -5,7 +5,7 @@ use std::time;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
-use common::{self, Message, Stream, Game, Command, Hero, Point, EntityID, Event};
+use common::{self, Message, Stream, Game, Hero, Point, EntityID, Event};
 
 const TICKS_PER_SECOND: u32 = 60;
 
@@ -64,13 +64,13 @@ impl Server {
 
     fn broadcast(&mut self, message: Message) {
         for stream in self.streams.values_mut() {
-            stream.write_message(message.clone());
+            stream.write_message(message.clone()).unwrap();
         }
     }
 
     fn tick(&mut self, time: f64) {
         let new_names = {
-            let mut jp = {
+            let jp = {
                 let mut x = self.joining_players.lock().unwrap();
                 let y = x.clone();
                 x.clear();
@@ -85,7 +85,9 @@ impl Server {
                 stream
                     .write_message(Message::SetPlayerEntityID(id))
                     .unwrap();
-                stream.write_message(Message::Events(self.game.events_for_loading()));
+                stream
+                    .write_message(Message::Events(self.game.events_for_loading()))
+                    .unwrap();
                 self.game.add_player(id, hero, name.clone(), pos);
                 self.streams.insert(id, stream);
                 self.broadcast(Message::Events(vec![
@@ -123,13 +125,9 @@ impl Server {
 
                 match message.unwrap() {
                     Message::Ping { id } => {
-                        match stream.write_message(Message::ReturnPing { id: id }) {
-                            Ok(()) => {}
-                            Err(err) => {
-                                println!("Ping failed");
-                                return;
-                            }
-                        }
+                        stream
+                            .write_message(Message::ReturnPing { id: id })
+                            .unwrap()
                     }
                     Message::Quit {} => {
                         println!(
@@ -168,7 +166,7 @@ impl Server {
 }
 
 fn handle_client(
-    mut stream: TcpStream,
+    stream: TcpStream,
     joining_players: Arc<Mutex<Vec<(Stream, String)>>>,
 ) -> io::Result<()> {
     println!("Connection from {}", stream.peer_addr().unwrap());

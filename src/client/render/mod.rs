@@ -3,7 +3,7 @@ use piston_window::character::CharacterCache;
 use specs;
 use gfx_device_gl::Factory;
 
-use common::{self, Player, Point};
+use common;
 
 pub mod particle;
 

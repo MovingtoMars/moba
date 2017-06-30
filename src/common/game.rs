@@ -1,9 +1,9 @@
-use std::collections::{VecDeque, HashMap};
-use std::ops::{Sub, Deref, DerefMut};
+use std::collections::HashMap;
+use std::ops::Sub;
 use std::sync::{Arc, Mutex};
 use na::{self, Point2, Vector2};
 use ncollide::query::PointQuery;
-use specs::{self, Join};
+use specs;
 
 use common::*;
 
@@ -152,7 +152,7 @@ impl Game {
     where
         F: FnOnce(specs::EntityBuilder<()>) -> specs::EntityBuilder<()>,
     {
-        let mut entity = self.planner.mut_world().create_now();
+        let entity = self.planner.mut_world().create_now();
         let entity = entity.with(kind).with(id);
         let entity = f(entity);
         let entity = entity.build();
@@ -196,8 +196,8 @@ impl Game {
             None => return None,
         };
 
-        let mut world = self.planner.mut_world();
-        let mut storage = world.read::<T>();
+        let world = self.planner.mut_world();
+        let storage = world.read::<T>();
         let component = match storage.get(entity) {
             Some(x) => x,
             None => return None,
@@ -215,7 +215,7 @@ impl Game {
             None => return None,
         };
 
-        let mut world = self.planner.mut_world();
+        let world = self.planner.mut_world();
         let mut storage = world.write::<T>();
         let component = match storage.get_mut(entity) {
             Some(x) => x,
@@ -239,13 +239,13 @@ impl Game {
             None => return false,
         };
 
-        let mut world = self.planner.mut_world();
-        let mut hb_storage = world.read::<Hitbox>();
+        let world = self.planner.mut_world();
+        let hb_storage = world.read::<Hitbox>();
         let hb = match hb_storage.get(entity) {
             Some(x) => x,
             None => return false,
         };
-        let mut pos_storage = world.read::<Position>();
+        let pos_storage = world.read::<Position>();
         let pos = match pos_storage.get(entity) {
             Some(x) => x,
             None => return false,
@@ -257,7 +257,7 @@ impl Game {
     }
 
     pub fn run_command(&mut self, command: Command, origin: EntityID) {
-        let mut entity = self.get_entity(origin).unwrap();
+        let entity = self.get_entity(origin).unwrap();
 
         // self.world.modify_entity(entity, |entity: ecs::ModifyData<MyComponents>,
         //                           data: &mut MyComponents| {

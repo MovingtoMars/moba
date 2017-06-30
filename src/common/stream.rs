@@ -41,19 +41,18 @@ fn read_packet(stream: &mut TcpStream) -> io::Result<String> {
 }
 
 impl Stream {
-    pub fn new(mut inner: TcpStream) -> Self {
+    pub fn new(inner: TcpStream) -> Self {
         let (send, recv) = chan::sync(32);
 
         inner.set_nodelay(true).unwrap();
-        let mut stream = Stream {
+        let stream = Stream {
             writer: Arc::new(Mutex::new(inner.try_clone().unwrap())),
             reader: Arc::new(Mutex::new(inner)),
             incoming: recv,
         };
 
         {
-            let mut reader = stream.reader.clone();
-            let mut incoming = stream.incoming.clone();
+            let reader = stream.reader.clone();
             thread::spawn(move || loop {
                 let packet = read_packet(&mut reader.lock().unwrap());
                 let packet = packet.map(|packet| decode_message(&packet));
