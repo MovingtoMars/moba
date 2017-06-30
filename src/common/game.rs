@@ -30,13 +30,14 @@ impl Hero {
 pub enum Target {
     Nothing,
     Position(Point),
+    Entity(EntityID),
 }
 
 pub struct Game {
     entity_ids: Vec<EntityID>,
     players: Vec<EntityID>,
     next_entity_id: u32,
-    entity_map: HashMap<EntityID, specs::Entity>,
+    entity_map: Arc<Mutex<HashMap<EntityID, specs::Entity>>>,
     planner: specs::Planner<Context>,
 }
 
@@ -52,6 +53,8 @@ impl Game {
         w.register::<Renderable>();
         w.register::<Hitbox>();
         w.register::<Projectile>();
+        w.register::<Hitpoints>();
+        w.register::<Team>();
 
         let mut planner = specs::Planner::new(w, 4);
 
@@ -62,7 +65,7 @@ impl Game {
             entity_ids: Vec::new(),
             players: Vec::new(),
             next_entity_id: 0,
-            entity_map: HashMap::new(),
+            entity_map: Arc::new(Mutex::new(HashMap::new())),
             planner: planner,
         }
     }
@@ -90,7 +93,6 @@ impl Game {
                 .with(Player {
                     hero: hero,
                     name: name,
-                    target: Target::Nothing,
                 })
                 .with(Renderable {
                     radius: hero.radius(),
@@ -101,6 +103,7 @@ impl Game {
                     speed: hero.speed(),
                     target: Target::Nothing,
                 })
+                .with(Hitpoints::new_at_max(50))
                 .with(Velocity { x: 0.0, y: 0.0 })
         });
 
@@ -136,14 +139,14 @@ impl Game {
         let entity = f(entity);
         let entity = entity.build();
 
-        self.entity_map.insert(id, entity);
+        self.entity_map.lock().unwrap().insert(id, entity);
         self.entity_ids.push(id);
 
         id
     }
 
     pub fn get_entity(&self, id: EntityID) -> Option<specs::Entity> {
-        self.entity_map.get(&id).cloned()
+        self.entity_map.lock().unwrap().get(&id).cloned()
     }
 
     pub fn entity_ids(&self) -> &[EntityID] {
@@ -170,8 +173,8 @@ impl Game {
     where
         F: FnOnce(&T) -> U,
     {
-        let entity = match self.entity_map.get(&e) {
-            Some(&entity) => entity,
+        let entity = match self.get_entity(e) {
+            Some(entity) => entity,
             None => return None,
         };
 
@@ -189,8 +192,8 @@ impl Game {
     where
         F: FnOnce(&mut T) -> U,
     {
-        let entity = match self.entity_map.get(&e) {
-            Some(&entity) => entity,
+        let entity = match self.get_entity(e) {
+            Some(entity) => entity,
             None => return None,
         };
 
@@ -208,9 +211,13 @@ impl Game {
         self.with_component::<T, _, _>(e, |c| c.clone())
     }
 
+    pub fn has_component<T: specs::Component>(&mut self, e: EntityID) -> bool {
+        self.with_component::<T, _, _>(e, |_| {}).is_some()
+    }
+
     pub fn entity_contains_point(&mut self, e: EntityID, x: f64, y: f64) -> bool {
-        let entity = match self.entity_map.get(&e) {
-            Some(&entity) => entity,
+        let entity = match self.get_entity(e) {
+            Some(entity) => entity,
             None => return false,
         };
 
@@ -242,10 +249,16 @@ impl Game {
         // });
 
         match command {
-            Command::Move(target) => {
+            Command::SetTarget(target) => {
                 self.run_custom(move |arg| {
-                    let mut t = arg.fetch(|world| world.write::<Unit>());
-                    t.get_mut(entity).unwrap().target = Target::Position(target)
+                    let (mut tc, idc) =
+                        arg.fetch(|world| (world.write::<Unit>(), world.read::<EntityID>()));
+                    let this_entity_id = *idc.get(entity).unwrap();
+
+                    tc.get_mut(entity).unwrap().target = match target {
+                        Target::Entity(id) if id == this_entity_id => Target::Nothing, // XXX error?
+                        x => x,
+                    };
                 });
             }
         }
@@ -286,7 +299,7 @@ impl Game {
     }
 
     pub fn tick(&mut self, time: f64) -> Vec<Event> {
-        let context = Context::new(time);
+        let context = Context::new(time, self.entity_map.clone());
         self.planner.dispatch(context.clone());
         self.planner.wait();
 
@@ -383,7 +396,7 @@ impl From<Vector2<f64>> for Point {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Command {
-    Move(Point),
+    SetTarget(Target),
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

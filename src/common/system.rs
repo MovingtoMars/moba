@@ -1,3 +1,6 @@
+use std::sync::Mutex;
+use std::collections::HashMap;
+
 use common::*;
 use specs::{self, Join};
 
@@ -9,13 +12,15 @@ pub struct ContextInner {
 pub struct Context {
     time: f64,
     inner: Arc<Mutex<ContextInner>>,
+    entity_map: Arc<Mutex<HashMap<EntityID, specs::Entity>>>, // should be read only
 }
 
 impl Context {
-    pub fn new(time: f64) -> Self {
+    pub fn new(time: f64, entity_map: Arc<Mutex<HashMap<EntityID, specs::Entity>>>) -> Self {
         Context {
-            time: time,
+            time,
             inner: Arc::new(Mutex::new(ContextInner { events: Vec::new() })),
+            entity_map,
         }
     }
 
@@ -25,6 +30,10 @@ impl Context {
 
     pub fn events(&self) -> Vec<Event> {
         self.inner.lock().unwrap().events.clone()
+    }
+
+    pub fn get_entity(&self, id: EntityID) -> Option<specs::Entity> {
+        self.entity_map.lock().unwrap().get(&id).cloned()
     }
 }
 
@@ -47,22 +56,31 @@ impl specs::System<Context> for UpdateVelocitySystem {
 
             *velocity = match unit.target {
                 Target::Nothing => Velocity { x: 0.0, y: 0.0 },
-                Target::Position(p) => {
-                    let dx = p.x - position.point.x;
-                    let dy = p.y - position.point.y;
-                    let d = (dx * dx + dy * dy).sqrt();
-                    if speed * c.time > d {
-                        speed = d;
-                    }
-                    let mut ratio = speed / d;
-
-                    Velocity {
-                        x: ratio * dx,
-                        y: ratio * dy,
-                    }
+                Target::Position(p) => calculate_velocity(position.point, p, speed, c.time),
+                Target::Entity(e) => {
+                    let target = positionc.get(c.get_entity(e).unwrap()).unwrap();
+                    calculate_velocity(position.point, target.point, speed, c.time)
                 }
             };
         }
+    }
+}
+
+fn calculate_velocity(source: Point, target: Point, mut speed: f64, time: f64) -> Velocity {
+    let dx = target.x - source.x;
+    let dy = target.y - source.y;
+    let d = (dx * dx + dy * dy).sqrt();
+    if d == 0.0 {
+        return Velocity::default();
+    }
+    if speed * time > d {
+        speed = d;
+    }
+    let ratio = speed / d;
+
+    Velocity {
+        x: ratio * dx,
+        y: ratio * dy,
     }
 }
 

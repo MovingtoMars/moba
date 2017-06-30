@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use piston_window::{self, Transformed, Window, Input, Button, MouseButton, MouseCursorEvent,
                     Motion};
 
-use common::{self, Stream, Message, Game, Player, Hero, Point, Command, EntityID};
+use common::*;
 
 mod render;
 use self::render::particle;
@@ -62,7 +62,7 @@ impl Client {
     fn run(
         &mut self,
         current_ping: Arc<Mutex<u64>>,
-        events: Arc<Mutex<Vec<common::Event>>>,
+        events: Arc<Mutex<Vec<Event>>>,
         player_entity_id: Arc<Mutex<Option<EntityID>>>,
     ) -> io::Result<()> {
 
@@ -98,7 +98,7 @@ impl Client {
                 Input::Render(_) => {
                     // HACK
                     if let Some(id) = self.id {
-                        self.game.with_component_mut::<common::Renderable, _, _>(
+                        self.game.with_component_mut::<Renderable, _, _>(
                             id,
                             |r| r.colour = [0.0, 0.0, 1.0, 1.0],
                         );
@@ -196,7 +196,13 @@ impl Client {
                                 MouseButton::Right => {
                                     let x = self.game_mouse_x;
                                     let y = self.game_mouse_y;
-                                    self.run_command(Command::Move(Point::new(x, y)));
+                                    if let Some(e) = self.targetable_entity_under_cursor() {
+                                        self.run_command(Command::SetTarget(Target::Entity(e)));
+                                    } else {
+                                        self.run_command(
+                                            Command::SetTarget(Target::Position(Point::new(x, y))),
+                                        );
+                                    }
                                     self.particles
                                         .push(Box::new(particle::RightClick::new(x, y)))
                                 }
@@ -217,6 +223,19 @@ impl Client {
         for e in self.game.entity_ids_cloned() {
             if self.game
                 .entity_contains_point(e, self.game_mouse_x, self.game_mouse_y)
+            {
+                return Some(e);
+            }
+        }
+        None
+    }
+
+    fn targetable_entity_under_cursor(&mut self) -> Option<EntityID> {
+        for e in self.game.entity_ids_cloned() {
+            let targetable = self.game.has_component::<Hitpoints>(e);
+            if targetable &&
+                self.game
+                    .entity_contains_point(e, self.game_mouse_x, self.game_mouse_y)
             {
                 return Some(e);
             }
