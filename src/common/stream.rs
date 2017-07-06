@@ -5,11 +5,11 @@ use std::net::TcpStream;
 use std::io::{self, Read, Write};
 use std::thread;
 use chan;
-use common::{Command, EntityID, Event};
+use common::{Command, EntityID, Event, Team};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Message {
-    Connect { name: String },
+    Connect { name: String, team: Option<Team> },
     AcceptConnection { message: String },
     Ping { id: u64 },
     ReturnPing { id: u64 },
@@ -61,6 +61,7 @@ impl Stream {
                     Ok(Message::Quit) |
                     Err(_) => {
                         send.send(packet);
+                        // send.send(Err(io::Error::from(io::ErrorKind::UnexpectedEof)));
                         return;
                     }
                     _ => send.send(packet),

@@ -79,10 +79,12 @@ pub fn render(
     entity: specs::Entity,
     world: &mut specs::World,
 ) {
-    let (r_component, pos_component, player_component) = (
+    let (r_component, pos_component, player_component, teamc, hitpointsc) = (
         world.read::<common::Renderable>(),
         world.read::<common::Position>(),
         world.read::<common::Player>(),
+        world.read::<common::Team>(),
+        world.read::<common::Hitpoints>(),
     );
 
     if let Some(r) = r_component.get(entity) {
@@ -102,7 +104,17 @@ pub fn render(
 
         if let Some(p) = player_component.get(entity) {
             let size = 16;
-            let name = &p.name;
+            let hp = hitpointsc.get(entity).unwrap();
+            let name = &format!(
+                "{} ({}) ({}/{})",
+                p.name,
+                teamc
+                    .get(entity)
+                    .map(|t| t.0.to_string())
+                    .unwrap_or("-".into()),
+                hp.current(),
+                hp.max()
+            );
             let width = fonts.bold.width(size, name);
 
             text(

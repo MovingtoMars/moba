@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::ops::Sub;
+use std::ops::{Sub, Mul};
 use std::sync::{Arc, Mutex};
 use na::{self, Point2, Vector2};
 use ncollide::query::PointQuery;
@@ -24,6 +24,18 @@ impl Hero {
             Hero::John => 200.0,
         }
     }
+
+    pub fn range(self) -> f64 {
+        match self {
+            Hero::John => 200.0,
+        }
+    }
+
+    pub fn attack_speed(self) -> f64 {
+        match self {
+            Hero::John => 0.8,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -36,7 +48,7 @@ pub enum Target {
 pub struct Game {
     entity_ids: Vec<EntityID>,
     players: Vec<EntityID>,
-    next_entity_id: u32,
+    next_entity_id: Arc<Mutex<u32>>,
     entity_map: Arc<Mutex<HashMap<EntityID, specs::Entity>>>,
     planner: specs::Planner<Context>,
 }
@@ -58,34 +70,15 @@ impl Game {
 
         let mut planner = specs::Planner::new(w, 4);
 
-        planner.add_system(UpdateVelocitySystem, "UpdateVelocitySystem", 100);
-        planner.add_system(MotionSystem, "MotionSystem", 99);
+        register_systems(&mut planner);
 
         Game {
             entity_ids: Vec::new(),
             players: Vec::new(),
-            next_entity_id: 0,
+            next_entity_id: Arc::new(Mutex::new(0)),
             entity_map: Arc::new(Mutex::new(HashMap::new())),
             planner: planner,
         }
-    }
-
-    pub fn remove_player(&mut self, id: EntityID) -> Event {
-        if !self.players.contains(&id) {
-            panic!("removed non-existent player");
-        }
-
-        self.players.retain(|&p| p != id);
-
-        self.remove_entity(id)
-    }
-
-    pub fn remove_entity(&mut self, id: EntityID) -> Event {
-        self.entity_ids.retain(|&x| x != id);
-        let e = self.entity_map.lock().unwrap().remove(&id).unwrap();
-        self.planner.mut_world().delete_later(e);
-
-        Event::RemoveEntity(id)
     }
 
     pub fn players(&self) -> &[EntityID] {
@@ -93,8 +86,9 @@ impl Game {
     }
 
     pub fn next_entity_id(&mut self) -> EntityID {
-        let t = self.next_entity_id;
-        self.next_entity_id = self.next_entity_id.checked_add(1).unwrap();
+        let mut next_entity_id = self.next_entity_id.lock().unwrap();
+        let t = *next_entity_id;
+        *next_entity_id = next_entity_id.checked_add(1).unwrap();
         EntityID(t)
     }
 
@@ -104,9 +98,10 @@ impl Game {
         hero: Hero,
         name: String,
         position: Point,
+        team: Option<Team>,
     ) -> EntityID {
         let e = self.add_entity(id, EntityKind::Hero, |entity| {
-            entity
+            let mut e = entity
                 .with(Position { point: position })
                 .with(Player {
                     hero: hero,
@@ -120,20 +115,34 @@ impl Game {
                 .with(Unit {
                     speed: hero.speed(),
                     target: Target::Nothing,
+                    attack_speed: hero.attack_speed(),
+                    time_until_next_attack: 0.0,
                 })
                 .with(Hitpoints::new_at_max(50))
-                .with(Velocity { x: 0.0, y: 0.0 })
+                .with(Velocity::new(0.0, 0.0));
+
+            if let Some(team) = team {
+                e = e.with(team);
+            }
+
+            e
         });
 
         self.players.push(e);
         e
     }
 
-    pub fn add_projectile(&mut self, id: EntityID, position: Point, target: Target) -> EntityID {
-        let e = self.add_entity(id, EntityKind::Projectile, |entity| {
+    pub fn add_projectile(
+        &mut self,
+        id: EntityID,
+        position: Point,
+        target: Target,
+        damage: u16,
+    ) -> EntityID {
+        self.add_entity(id, EntityKind::Projectile, |entity| {
             entity
                 .with(Position { point: position })
-                .with(Projectile {})
+                .with(Projectile { damage })
                 .with(Renderable {
                     radius: 5.0,
                     colour: [1.0, 0.0, 0.0, 1.0],
@@ -142,10 +151,11 @@ impl Game {
                 .with(Unit {
                     speed: 400.0,
                     target: target,
+                    attack_speed: 0.0,
+                    time_until_next_attack: 0.0,
                 })
-                .with(Velocity { x: 0.0, y: 0.0 })
-        });
-        e
+                .with(Velocity::new(0.0, 0.0))
+        })
     }
 
     pub fn add_entity<F>(&mut self, id: EntityID, kind: EntityKind, f: F) -> EntityID
@@ -280,12 +290,19 @@ impl Game {
         }
     }
 
+    pub fn remove_entity(&mut self, id: EntityID) {
+        let e = self.get_entity(id).unwrap();
+        self.entity_map.lock().unwrap().remove(&id);
+        self.players.retain(|&p| p != id);
+        self.entity_ids.retain(|&x| x != id);
+        self.planner.mut_world().delete_later(e);
+    }
+
     pub fn run_event(&mut self, event: Event) {
         println!("{:?}", event);
         match event {
             Event::RemoveEntity(id) => {
-                let e = self.get_entity(id).unwrap();
-                self.planner.mut_world().delete_later(e);
+                self.remove_entity(id);
             }
             Event::EntityMove(id, point) => {
                 let e = self.get_entity(id).unwrap();
@@ -299,15 +316,24 @@ impl Game {
                 hero,
                 position,
                 name,
+                team,
             } => {
-                self.add_player(id, hero, name, position);
+                self.add_player(id, hero, name, position, team);
             }
             Event::AddProjectile {
                 id,
                 position,
                 target,
+                damage,
             } => {
-                self.add_projectile(id, position, target);
+                self.add_projectile(id, position, target, damage);
+            }
+            Event::DamageEntity { id, damage } => {
+                let e = self.get_entity(id).unwrap();
+                self.run_custom(move |arg| {
+                    let mut hitpointsc = arg.fetch(|w| w.write::<Hitpoints>());
+                    hitpointsc.get_mut(e).unwrap().damage(damage);
+                });
             }
         }
     }
@@ -319,7 +345,7 @@ impl Game {
     }
 
     pub fn tick(&mut self, time: f64) -> Vec<Event> {
-        let context = Context::new(time, self.entity_map.clone());
+        let context = Context::new(time, self.entity_map.clone(), self.next_entity_id.clone());
         self.planner.dispatch(context.clone());
         self.planner.wait();
 
@@ -340,6 +366,8 @@ impl Game {
             let playerc = world.read::<Player>();
             let unitc = world.read::<Unit>();
             let posc = world.read::<Position>();
+            let teamc = world.read::<Team>();
+            let projectilec = world.read::<Projectile>();
 
             match kind {
                 EntityKind::Hero => {
@@ -351,16 +379,19 @@ impl Game {
                         hero: player.hero,
                         position: pos,
                         name: player.name().into(),
+                        team: teamc.get(e).cloned(),
                     });
                 }
                 EntityKind::Projectile => {
                     let pos = posc.get(e).unwrap().point;
                     let unit = unitc.get(e).unwrap();
+                    let proj = projectilec.get(e).unwrap();
 
                     events.push(Event::AddProjectile {
                         id: id,
                         position: pos,
                         target: unit.target.clone(),
+                        damage: proj.damage,
                     });
                 }
             }
@@ -380,13 +411,51 @@ impl Point {
     pub fn new(x: f64, y: f64) -> Self {
         Point { x: x, y: y }
     }
+
+    pub fn distance_to(self: Point, p: Point) -> f64 {
+        (p - self).norm()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Copy)]
+pub struct Vector {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl Vector {
+    pub fn norm(self) -> f64 {
+        (self.x * self.x + self.y * self.y).sqrt()
+    }
+
+    pub fn with_norm(mut self, norm: f64) -> Self {
+        assert!(norm >= 0.0);
+        let ratio = norm / self.norm();
+        self.x *= ratio;
+        self.y *= ratio;
+        self
+    }
+}
+
+impl Mul<f64> for Vector {
+    type Output = Vector;
+
+    fn mul(self, right: f64) -> Self::Output {
+        Vector {
+            x: self.x * right,
+            y: self.y * right,
+        }
+    }
 }
 
 impl Sub<Point> for Point {
-    type Output = Vector2<f64>;
+    type Output = Vector;
 
     fn sub(self, right: Point) -> Self::Output {
-        Point2::from(self) - Point2::from(right)
+        Vector {
+            x: self.x - right.x,
+            y: self.y - right.y,
+        }
     }
 }
 
@@ -427,11 +496,14 @@ pub enum Event {
         position: Point,
         hero: Hero,
         name: String,
+        team: Option<Team>,
     },
     AddProjectile {
         id: EntityID,
         position: Point,
         target: Target,
+        damage: u16,
     },
+    DamageEntity { id: EntityID, damage: u16 },
     RemoveEntity(EntityID),
 }

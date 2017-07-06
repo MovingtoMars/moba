@@ -41,6 +41,14 @@ impl Hitpoints {
             self.current = self.max;
         }
     }
+
+    pub fn damage(&mut self, damage: u16) {
+        if damage > self.current {
+            self.current = 0;
+        } else {
+            self.current -= damage;
+        }
+    }
 }
 
 impl specs::Component for Hitpoints {
@@ -72,10 +80,20 @@ impl Hitbox {
     pub fn new_ball(radius: f64) -> Self {
         Hitbox::new(ncollide::shape::Ball::new(radius))
     }
+
+    pub fn contains_point(&self, x: f64, y: f64, point: na::Point2<f64>) -> bool {
+        use ncollide::query::PointQuery;
+        self.shape.contains_point(
+            &na::Isometry2::new(na::Vector2::new(x, y), na::zero()),
+            &point,
+        )
+    }
 }
 
 #[derive(Clone, Debug)]
-pub struct Projectile {}
+pub struct Projectile {
+    pub damage: u16,
+}
 
 impl specs::Component for Projectile {
     type Storage = specs::HashMapStorage<Projectile>;
@@ -111,6 +129,8 @@ impl specs::Component for Renderable {
 pub struct Unit {
     pub speed: f64,
     pub target: Target,
+    pub attack_speed: f64, // attacks_per_second
+    pub time_until_next_attack: f64,
 }
 
 impl specs::Component for Unit {
@@ -119,8 +139,13 @@ impl specs::Component for Unit {
 
 #[derive(Clone, Debug, Default)]
 pub struct Velocity {
-    pub x: f64,
-    pub y: f64,
+    pub vector: Vector,
+}
+
+impl Velocity {
+    pub fn new(x: f64, y: f64) -> Self {
+        Velocity { vector: Vector { x, y } }
+    }
 }
 
 impl specs::Component for Velocity {
@@ -144,17 +169,8 @@ impl specs::Component for EntityID {
     type Storage = specs::VecStorage<EntityID>;
 }
 
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// 0 means unaligned (so can be attacked by anyone).
-/// TODO remove?
 pub struct Team(pub u8);
-
-impl Team {
-    pub fn is_unaligned(self) -> bool {
-        self.0 == 0
-    }
-}
 
 impl specs::Component for Team {
     type Storage = specs::VecStorage<Team>;

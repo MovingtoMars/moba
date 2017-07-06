@@ -14,6 +14,7 @@ use self::render::particle;
 
 pub struct Client {
     name: String,
+    team: Option<Team>,
     game: Game,
     viewport: render::Viewport,
     particles: Vec<Box<particle::Particle>>,
@@ -28,9 +29,11 @@ pub struct Client {
 }
 
 impl Client {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: String, team: Option<Team>) -> Self {
         Client {
-            name: name,
+            name,
+            team,
+
             game: Game::new(),
             viewport: render::Viewport::new(-500.0, -500.0, 1.0),
             particles: Vec::new(),
@@ -252,6 +255,7 @@ impl Client {
         self.stream = Some(stream.clone());
 
         let name = self.name.clone();
+        let team = self.team;
 
         let current_ping = Arc::new(Mutex::new(0));
         let events = Arc::new(Mutex::new(Vec::new()));
@@ -264,7 +268,7 @@ impl Client {
 
             thread::spawn(move || {
                 stream
-                    .write_message(Message::Connect { name: name })
+                    .write_message(Message::Connect { name, team })
                     .expect("1");
 
                 let message = stream.get_message().unwrap();

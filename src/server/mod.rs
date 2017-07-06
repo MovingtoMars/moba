@@ -5,14 +5,14 @@ use std::time;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
-use common::{self, Message, Stream, Game, Hero, Point, EntityID, Event};
+use common::{self, Message, Stream, Game, Hero, Point, EntityID, Event, Team};
 
 const TICKS_PER_SECOND: u32 = 60;
 
 pub struct Server {
     game: Game,
     streams: HashMap<EntityID, Stream>,
-    joining_players: Arc<Mutex<Vec<(Stream, String)>>>,
+    joining_players: Arc<Mutex<Vec<(Stream, String, Option<Team>)>>>,
 }
 
 impl Server {
@@ -78,9 +78,9 @@ impl Server {
             };
 
             let new_names = jp.iter().map(|p| p.1.clone()).collect::<Vec<String>>();
-            for (mut stream, name) in jp {
+            for (mut stream, name, team) in jp {
                 let id = self.game.next_entity_id();
-                let pos = Point::new(0.0, 0.0);
+                let position = Point::new(0.0, 0.0);
                 let hero = Hero::John;
                 stream
                     .write_message(Message::SetPlayerEntityID(id))
@@ -88,14 +88,15 @@ impl Server {
                 stream
                     .write_message(Message::Events(self.game.events_for_loading()))
                     .unwrap();
-                self.game.add_player(id, hero, name.clone(), pos);
+                self.game.add_player(id, hero, name.clone(), position, team);
                 self.streams.insert(id, stream);
                 self.broadcast(Message::Events(vec![
                     Event::AddHero {
-                        id: id,
-                        hero: hero,
-                        position: pos,
-                        name: name,
+                        id,
+                        hero,
+                        position,
+                        name,
+                        team,
                     },
                 ]));
 
@@ -152,7 +153,7 @@ impl Server {
 
         for player in players_to_remove {
             self.streams.remove(&player);
-            events.push(self.game.remove_player(player));
+            events.push(Event::RemoveEntity(player));
         }
 
         for (command, id) in commands {
@@ -167,16 +168,16 @@ impl Server {
 
 fn handle_client(
     stream: TcpStream,
-    joining_players: Arc<Mutex<Vec<(Stream, String)>>>,
+    joining_players: Arc<Mutex<Vec<(Stream, String, Option<Team>)>>>,
 ) -> io::Result<()> {
     println!("Connection from {}", stream.peer_addr().unwrap());
     let mut stream = common::Stream::new(stream);
 
     let m = stream.get_message().unwrap();
-    let name = match m {
-        Message::Connect { name } => {
+    let (name, team) = match m {
+        Message::Connect { name, team } => {
             println!("Name: {}", name);
-            name
+            (name, team)
         }
         _ => {
             println!("Client didn't send connect message, returning..");
@@ -189,7 +190,7 @@ fn handle_client(
             message: "Welcome to moba alpha.".into(),
         })?;
 
-    joining_players.lock().unwrap().push((stream, name));
+    joining_players.lock().unwrap().push((stream, name, team));
     Ok(())
 
     // loop {
