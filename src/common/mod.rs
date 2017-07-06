@@ -11,3 +11,12 @@ pub use self::component::*;
 
 mod system;
 pub use self::system::*;
+
+mod event;
+pub use self::event::*;
+
+mod vector;
+pub use self::vector::*;
+
+mod command;
+pub use self::command::*;
