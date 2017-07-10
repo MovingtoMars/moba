@@ -1,6 +1,5 @@
 use std::ops::{Sub, Mul};
 use na::{Point2, Vector2};
-use common::*;
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]

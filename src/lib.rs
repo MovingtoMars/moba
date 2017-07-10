@@ -13,6 +13,9 @@ extern crate nalgebra as na;
 extern crate ncollide;
 extern crate specs;
 extern crate gfx_device_gl;
+#[macro_use]
+extern crate shred_derive;
+extern crate shred;
 
 pub mod common;
 pub mod client;

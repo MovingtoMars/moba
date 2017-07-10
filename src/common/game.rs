@@ -1,7 +1,6 @@
 use std::collections::HashMap;
-use std::ops::{Sub, Mul};
 use std::sync::{Arc, Mutex};
-use na::{self, Point2, Vector2};
+use na::{self, Point2};
 use ncollide::query::PointQuery;
 use specs;
 
@@ -50,7 +49,7 @@ pub struct Game {
     players: Vec<EntityID>,
     next_entity_id: Arc<Mutex<u32>>,
     entity_map: Arc<Mutex<HashMap<EntityID, specs::Entity>>>,
-    planner: specs::Planner<Context>,
+    world: specs::World,
 }
 
 impl Game {
@@ -68,16 +67,12 @@ impl Game {
         w.register::<Hitpoints>();
         w.register::<Team>();
 
-        let mut planner = specs::Planner::new(w, 4);
-
-        register_systems(&mut planner);
-
         Game {
             entity_ids: Vec::new(),
             players: Vec::new(),
             next_entity_id: Arc::new(Mutex::new(0)),
             entity_map: Arc::new(Mutex::new(HashMap::new())),
-            planner: planner,
+            world: w,
         }
     }
 
@@ -149,7 +144,7 @@ impl Game {
                 })
                 .with(Hitbox::new_ball(5.0))
                 .with(Unit {
-                    speed: 400.0,
+                    speed: 800.0,
                     target: target,
                     attack_speed: 0.0,
                     time_until_next_attack: 0.0,
@@ -160,9 +155,9 @@ impl Game {
 
     pub fn add_entity<F>(&mut self, id: EntityID, kind: EntityKind, f: F) -> EntityID
     where
-        F: FnOnce(specs::EntityBuilder<()>) -> specs::EntityBuilder<()>,
+        F: FnOnce(specs::EntityBuilder) -> specs::EntityBuilder,
     {
-        let entity = self.planner.mut_world().create_now();
+        let entity = self.world.create_entity();
         let entity = entity.with(kind).with(id);
         let entity = f(entity);
         let entity = entity.build();
@@ -186,15 +181,8 @@ impl Game {
         self.entity_ids.clone()
     }
 
-    pub fn run_custom<F>(&mut self, f: F)
-    where
-        F: 'static + Send + FnOnce(specs::RunArg),
-    {
-        self.planner.run_custom(f)
-    }
-
     pub fn mut_world(&mut self) -> &mut specs::World {
-        self.planner.mut_world()
+        &mut self.world
     }
 
     pub fn with_component<T: specs::Component, U, F>(&mut self, e: EntityID, f: F) -> Option<U>
@@ -206,8 +194,7 @@ impl Game {
             None => return None,
         };
 
-        let world = self.planner.mut_world();
-        let storage = world.read::<T>();
+        let storage = self.world.read::<T>();
         let component = match storage.get(entity) {
             Some(x) => x,
             None => return None,
@@ -225,8 +212,7 @@ impl Game {
             None => return None,
         };
 
-        let world = self.planner.mut_world();
-        let mut storage = world.write::<T>();
+        let mut storage = self.world.write::<T>();
         let component = match storage.get_mut(entity) {
             Some(x) => x,
             None => return None,
@@ -249,13 +235,12 @@ impl Game {
             None => return false,
         };
 
-        let world = self.planner.mut_world();
-        let hb_storage = world.read::<Hitbox>();
+        let hb_storage = self.world.read::<Hitbox>();
         let hb = match hb_storage.get(entity) {
             Some(x) => x,
             None => return false,
         };
-        let pos_storage = world.read::<Position>();
+        let pos_storage = self.world.read::<Position>();
         let pos = match pos_storage.get(entity) {
             Some(x) => x,
             None => return false,
@@ -269,23 +254,14 @@ impl Game {
     pub fn run_command(&mut self, command: Command, origin: EntityID) {
         let entity = self.get_entity(origin).unwrap();
 
-        // self.world.modify_entity(entity, |entity: ecs::ModifyData<MyComponents>,
-        //                           data: &mut MyComponents| {
-        //     match command {
-        //         Command::Move(target) => data.player[entity].target = Target::Position(target),
-        //     }
-        // });
-
         match command {
             Command::SetTarget(target) => {
-                self.run_custom(move |arg| {
-                    let mut tc = arg.fetch(|world| world.write::<Unit>());
+                let mut tc = self.world.write::<Unit>();
 
-                    tc.get_mut(entity).unwrap().target = match target {
-                        Target::Entity(id) if id == origin => Target::Nothing, // XXX error?
-                        x => x,
-                    };
-                });
+                tc.get_mut(entity).unwrap().target = match target {
+                    Target::Entity(id) if id == origin => Target::Nothing, // XXX error?
+                    x => x,
+                };
             }
         }
     }
@@ -295,7 +271,7 @@ impl Game {
         self.entity_map.lock().unwrap().remove(&id);
         self.players.retain(|&p| p != id);
         self.entity_ids.retain(|&x| x != id);
-        self.planner.mut_world().delete_later(e);
+        self.world.delete_entity(e);
     }
 
     pub fn run_event(&mut self, event: Event) {
@@ -306,10 +282,8 @@ impl Game {
             }
             Event::EntityMove(id, point) => {
                 let e = self.get_entity(id).unwrap();
-                self.run_custom(move |arg| {
-                    let mut posc = arg.fetch(|w| w.write::<Position>());
-                    posc.get_mut(e).unwrap().point = point;
-                });
+                let mut posc = self.world.write::<Position>();
+                posc.get_mut(e).unwrap().point = point;
             }
             Event::AddHero {
                 id,
@@ -330,10 +304,8 @@ impl Game {
             }
             Event::DamageEntity { id, damage } => {
                 let e = self.get_entity(id).unwrap();
-                self.run_custom(move |arg| {
-                    let mut hitpointsc = arg.fetch(|w| w.write::<Hitpoints>());
-                    hitpointsc.get_mut(e).unwrap().damage(damage);
-                });
+                let mut hitpointsc = self.world.write::<Hitpoints>();
+                hitpointsc.get_mut(e).unwrap().damage(damage);
             }
         }
     }
@@ -345,13 +317,19 @@ impl Game {
     }
 
     pub fn tick(&mut self, time: f64) -> Vec<Event> {
+        self.world.maintain();
+
         let context = Context::new(time, self.entity_map.clone(), self.next_entity_id.clone());
-        self.planner.dispatch(context.clone());
-        self.planner.wait();
+        self.world.add_resource(context.clone()); // XXX
+        let mut dispatcher = register_systems(specs::DispatcherBuilder::new()).build();
+        dispatcher.dispatch(&mut self.world.res);
 
         let events = context.events();
 
         self.run_events(&events);
+
+        self.world.maintain();
+
         events
     }
 
@@ -360,7 +338,7 @@ impl Game {
 
         for &id in &self.entity_ids {
             let e = self.get_entity(id).unwrap();
-            let world = self.planner.mut_world();
+            let world = &mut self.world;
             let kind = *world.read::<EntityKind>().get(e).unwrap();
 
             let playerc = world.read::<Player>();
