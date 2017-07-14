@@ -153,6 +153,7 @@ impl Server {
 
         for player in players_to_remove {
             self.streams.remove(&player);
+            self.game.remove_entity(player);
             events.push(Event::RemoveEntity(player));
         }
 
