@@ -14,7 +14,7 @@ pub fn register_systems<'a, 'b>(
     let d = d.add(MotionSystem, "MotionSystem", &["UpdateVelocitySystem"]);
     let d = d.add_barrier();
     let d = d.add(BasicAttackerSystem, "BasicAttackerSystem", &[]);
-    let d = d.add(ProjectileSystem, "ProjectileSystem", &[]);
+    let d = d.add(ProjectileSystem, "ProjectileSystem", &[]); // XXX: race condition with BasicAttackerSystem?
 
     d
 }

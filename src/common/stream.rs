@@ -7,6 +7,7 @@ use std::thread;
 use chan;
 use common::{Command, EntityID, Event, Team};
 
+// XXX: separate into client->server and server->client
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Message {
     Connect { name: String, team: Option<Team> },
