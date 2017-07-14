@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
-use na::{Point2, Vector2};
 
 use common::*;
 use specs::{self, Join};
@@ -8,7 +7,9 @@ use specs::{self, Join};
 type RS<'a, T> = specs::ReadStorage<'a, T>;
 type WS<'a, T> = specs::WriteStorage<'a, T>;
 
-pub fn register_systems<'a, 'b>(d: specs::DispatcherBuilder<'a, 'b>) -> specs::DispatcherBuilder<'a, 'b> {
+pub fn register_systems<'a, 'b>(
+    d: specs::DispatcherBuilder<'a, 'b>,
+) -> specs::DispatcherBuilder<'a, 'b> {
     let d = d.add(UpdateVelocitySystem, "UpdateVelocitySystem", &[]);
     let d = d.add(MotionSystem, "MotionSystem", &["UpdateVelocitySystem"]);
     let d = d.add_barrier();
@@ -67,15 +68,15 @@ impl Context {
 
 #[derive(SystemData)]
 pub struct UpdateVelocityData<'a> {
-        unitc: RS<'a, Unit>,
-        velocityc: WS<'a, Velocity>,
-        positionc: RS<'a, Position>,
-        idc: RS<'a, EntityID>,
-        playerc: RS<'a, Player>,
-        hitpointsc: RS<'a, Hitpoints>,
-        teamc: RS<'a, Team>,
+    unitc: RS<'a, Unit>,
+    velocityc: WS<'a, Velocity>,
+    positionc: RS<'a, Position>,
+    idc: RS<'a, EntityID>,
+    playerc: RS<'a, Player>,
+    hitpointsc: RS<'a, Hitpoints>,
+    teamc: RS<'a, Team>,
 
-        c: specs::Fetch<'a, Context>,
+    c: specs::Fetch<'a, Context>,
 }
 
 pub struct UpdateVelocitySystem;
@@ -86,7 +87,9 @@ impl<'a> specs::System<'a> for UpdateVelocitySystem {
     fn run(&mut self, mut data: Self::SystemData) {
         let time = data.c.time;
 
-        for (id, unit, velocity, position) in (&data.idc, &data.unitc, &mut data.velocityc, &data.positionc).join() {
+        for (id, unit, velocity, position) in
+            (&data.idc, &data.unitc, &mut data.velocityc, &data.positionc).join()
+        {
             let speed = unit.speed;
 
             *velocity = match unit.target {
@@ -144,11 +147,11 @@ fn calculate_velocity(
 
 #[derive(SystemData)]
 pub struct MotionData<'a> {
-        positionc: RS<'a, Position>,
-        velocityc: RS<'a, Velocity>,
-        idc: RS<'a, EntityID>,
+    positionc: RS<'a, Position>,
+    velocityc: RS<'a, Velocity>,
+    idc: RS<'a, EntityID>,
 
-        c: specs::Fetch<'a, Context>,
+    c: specs::Fetch<'a, Context>,
 }
 
 pub struct MotionSystem;
@@ -174,10 +177,11 @@ impl<'a> specs::System<'a> for MotionSystem {
 
 #[derive(SystemData)]
 pub struct BasicAttackerData<'a> {
-        positionc: RS<'a, Position>,
-        unitc: WS<'a, Unit>,
+    positionc: RS<'a, Position>,
+    unitc: RS<'a, Unit>,
+    basic_attackerc: WS<'a, BasicAttacker>,
 
-        c: specs::Fetch<'a, Context>,
+    c: specs::Fetch<'a, Context>,
 }
 
 pub struct BasicAttackerSystem;
@@ -186,22 +190,25 @@ impl<'a> specs::System<'a> for BasicAttackerSystem {
     type SystemData = BasicAttackerData<'a>;
 
     fn run(&mut self, mut data: Self::SystemData) {
-        for (position, mut unit) in (&data.positionc, &mut data.unitc).join() {
-            if unit.attack_speed == 0.0 {
+        for (position, unit, mut basic_attacker) in
+            (&data.positionc, &data.unitc, &mut data.basic_attackerc).join()
+        {
+            if basic_attacker.attack_speed == 0.0 {
                 continue;
             }
 
-            assert!(unit.time_until_next_attack >= 0.0);
+            assert!(basic_attacker.time_until_next_attack >= 0.0);
 
-            if unit.time_until_next_attack > 0.0 {
-                unit.time_until_next_attack -= data.c.time;
-                unit.time_until_next_attack = unit.time_until_next_attack.max(0.0);
+            if basic_attacker.time_until_next_attack > 0.0 {
+                basic_attacker.time_until_next_attack -= data.c.time;
+                basic_attacker.time_until_next_attack =
+                    basic_attacker.time_until_next_attack.max(0.0);
                 continue;
             }
 
             match unit.target {
                 Target::Entity(e) => {
-                    unit.time_until_next_attack = 1.0 / unit.attack_speed;
+                    basic_attacker.time_until_next_attack = 1.0 / basic_attacker.attack_speed;
                     data.c.push_event(Event::AddProjectile {
                         id: data.c.next_entity_id(),
                         position: position.point,
@@ -217,13 +224,13 @@ impl<'a> specs::System<'a> for BasicAttackerSystem {
 
 #[derive(SystemData)]
 pub struct ProjectileData<'a> {
-        positionc: RS<'a, Position>,
-        unitc: RS<'a, Unit>,
-        idc: RS<'a, EntityID>,
-        hitboxc: RS<'a, Hitbox>,
-        projectilec: RS<'a, Projectile>,
+    positionc: RS<'a, Position>,
+    unitc: RS<'a, Unit>,
+    idc: RS<'a, EntityID>,
+    hitboxc: RS<'a, Hitbox>,
+    projectilec: RS<'a, Projectile>,
 
-        c: specs::Fetch<'a, Context>,
+    c: specs::Fetch<'a, Context>,
 }
 
 pub struct ProjectileSystem;
@@ -233,7 +240,13 @@ impl<'a> specs::System<'a> for ProjectileSystem {
 
     fn run(&mut self, data: Self::SystemData) {
         for (id, position, unit, projectile, hitbox) in
-            (&data.idc, &data.positionc, &data.unitc, &data.projectilec, &data.hitboxc).join()
+            (
+                &data.idc,
+                &data.positionc,
+                &data.unitc,
+                &data.projectilec,
+                &data.hitboxc,
+            ).join()
         {
             //
             let target_entity_id = match unit.target {

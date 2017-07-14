@@ -66,6 +66,7 @@ impl Game {
         w.register::<Projectile>();
         w.register::<Hitpoints>();
         w.register::<Team>();
+        w.register::<BasicAttacker>();
 
         Game {
             entity_ids: Vec::new(),
@@ -110,6 +111,8 @@ impl Game {
                 .with(Unit {
                     speed: hero.speed(),
                     target: Target::Nothing,
+                })
+                .with(BasicAttacker {
                     attack_speed: hero.attack_speed(),
                     time_until_next_attack: 0.0,
                 })
@@ -146,8 +149,6 @@ impl Game {
                 .with(Unit {
                     speed: 800.0,
                     target: target,
-                    attack_speed: 0.0,
-                    time_until_next_attack: 0.0,
                 })
                 .with(Velocity::new(0.0, 0.0))
         })

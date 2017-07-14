@@ -125,12 +125,19 @@ impl specs::Component for Renderable {
     type Storage = specs::VecStorage<Renderable>;
 }
 
+pub struct BasicAttacker {
+    pub attack_speed: f64, // attacks_per_second
+    pub time_until_next_attack: f64,
+}
+
+impl specs::Component for BasicAttacker {
+    type Storage = specs::VecStorage<BasicAttacker>;
+}
+
 #[derive(Clone, Debug)]
 pub struct Unit {
     pub speed: f64,
     pub target: Target,
-    pub attack_speed: f64, // attacks_per_second
-    pub time_until_next_attack: f64,
 }
 
 impl specs::Component for Unit {
