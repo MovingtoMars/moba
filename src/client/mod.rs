@@ -96,119 +96,24 @@ impl Client {
 
             match e {
                 Input::Render(_) => {
-                    // HACK
-                    if let Some(id) = self.id {
-                        self.game.with_component_mut::<Renderable, _, _>(
-                            id,
-                            |r| r.colour = [0.0, 0.0, 1.0, 1.0],
-                        );
-                    }
-
-                    let dur_since_last_render = last_render_time.elapsed();
-                    last_render_time = time::Instant::now();
-
-                    // self.game.clone();
-                    // self.game.clone();
-                    // self.game.clone();
-
-                    window.draw_2d(&e, |c, g| {
-                        piston_window::clear([1.0; 4], g);
-                        // piston_window::rectangle([1.0, 0.0, 0.0, 1.0], // red
-                        //                          [0.0, 0.0, 100.0, 100.0],
-                        //                          c.transform,
-                        //
-
-                        {
-                            let viewport = self.viewport;
-                            for e in self.game.entity_ids_cloned() {
-                                let e = self.game.get_entity(e).unwrap();
-                                render::render(
-                                    viewport,
-                                    c,
-                                    g,
-                                    &mut fonts,
-                                    e,
-                                    self.game.mut_world(),
-                                );
-                            }
-                        }
-
-                        for p in &mut self.particles {
-                            (&mut **p).render(self.viewport, c, g)
-                        }
-
-                        piston_window::text(
-                            [0.0, 0.0, 0.0, 1.0],
-                            14,
-                            &format!(
-                                "Ping: {}",
-                                std::cmp::min(*current_ping.lock().unwrap(), 999)
-                            ),
-                            &mut fonts.regular,
-                            c.transform.trans(width as f64 - 80.0, 15.0),
-                            g,
-                        );
-
-                        piston_window::text(
-                            [0.0, 0.0, 0.0, 1.0],
-                            14,
-                            &format!(
-                                "Selected: {:?}    Hovered: {:?}",
-                                self.selected_entity_id,
-                                self.hovered_entity_id
-                            ),
-                            &mut fonts.regular,
-                            c.transform.trans(5.0, 15.0),
-                            g,
-                        );
-
-
-
-                        for p in &mut self.particles {
-                            p.update(
-                                dur_since_last_render.as_secs() as f64 +
-                                    dur_since_last_render.subsec_nanos() as f64 / 1000000000.0,
-                            );
-                        }
-
-                        self.particles.retain(|p| !p.should_remove());
-                    });
+                    self.render(
+                        &mut window,
+                        &current_ping,
+                        width,
+                        &mut last_render_time,
+                        e,
+                        &mut fonts,
+                    )
                 }
                 Input::Move(motion) => {
                     match motion {
-                        Motion::MouseCursor(x, y) => {
-                            self.screen_mouse_x = x;
-                            self.screen_mouse_y = y;
-                            self.game_mouse_x = self.viewport.x_screen_to_game(x);
-                            self.game_mouse_y = self.viewport.y_screen_to_game(y);
-                            self.hovered_entity_id = self.entity_under_cursor();
-                        }
+                        Motion::MouseCursor(x, y) => self.handle_mouse_motion(x, y),
                         _ => {}
                     }
                 }
                 Input::Press(button) => {
                     match button {
-                        Button::Mouse(mouse_button) => {
-                            match mouse_button {
-                                MouseButton::Left => {
-                                    self.selected_entity_id = self.entity_under_cursor();
-                                }
-                                MouseButton::Right => {
-                                    let x = self.game_mouse_x;
-                                    let y = self.game_mouse_y;
-                                    if let Some(e) = self.targetable_entity_under_cursor() {
-                                        self.run_command(Command::SetTarget(Target::Entity(e)));
-                                    } else {
-                                        self.run_command(
-                                            Command::SetTarget(Target::Position(Point::new(x, y))),
-                                        );
-                                    }
-                                    self.particles
-                                        .push(Box::new(particle::RightClick::new(x, y)))
-                                }
-                                _ => {}
-                            }
-                        }
+                        Button::Mouse(mouse_button) => self.handle_mouse_press(mouse_button),
                         _ => {}
                     }
                 }
@@ -217,6 +122,113 @@ impl Client {
         }
 
         self.stream.as_mut().unwrap().write_message(Message::Quit)
+    }
+
+    fn render(
+        &mut self,
+        window: &mut piston_window::PistonWindow,
+        current_ping: &Arc<Mutex<u64>>,
+        width: u32,
+        last_render_time: &mut time::Instant,
+        e: Input,
+        fonts: &mut render::Fonts,
+    ) {
+        // HACK
+        if let Some(id) = self.id {
+            self.game
+                .with_component_mut::<Renderable, _, _>(id, |r| r.colour = [0.0, 0.0, 1.0, 1.0]);
+        }
+
+        let dur_since_last_render = last_render_time.elapsed();
+        *last_render_time = time::Instant::now();
+
+        // self.game.clone();
+        // self.game.clone();
+        // self.game.clone();
+
+        window.draw_2d(&e, |c, g| {
+            piston_window::clear([1.0; 4], g);
+            // piston_window::rectangle([1.0, 0.0, 0.0, 1.0], // red
+            //                          [0.0, 0.0, 100.0, 100.0],
+            //                          c.transform,
+            //
+
+            {
+                let viewport = self.viewport;
+                for e in self.game.entity_ids_cloned() {
+                    let e = self.game.get_entity(e).unwrap();
+                    render::render(viewport, c, g, fonts, e, self.game.mut_world());
+                }
+            }
+
+            for p in &mut self.particles {
+                (&mut **p).render(self.viewport, c, g)
+            }
+
+            piston_window::text(
+                [0.0, 0.0, 0.0, 1.0],
+                14,
+                &format!(
+                    "Ping: {}",
+                    std::cmp::min(*current_ping.lock().unwrap(), 999)
+                ),
+                &mut fonts.regular,
+                c.transform.trans(width as f64 - 80.0, 15.0),
+                g,
+            );
+
+            piston_window::text(
+                [0.0, 0.0, 0.0, 1.0],
+                14,
+                &format!(
+                    "Selected: {:?}    Hovered: {:?}",
+                    self.selected_entity_id,
+                    self.hovered_entity_id
+                ),
+                &mut fonts.regular,
+                c.transform.trans(5.0, 15.0),
+                g,
+            );
+
+
+
+            for p in &mut self.particles {
+                p.update(
+                    dur_since_last_render.as_secs() as f64 +
+                        dur_since_last_render.subsec_nanos() as f64 / 1000000000.0,
+                );
+            }
+
+            self.particles.retain(|p| !p.should_remove());
+        });
+    }
+
+    fn handle_mouse_press(&mut self, mouse_button: MouseButton) {
+        match mouse_button {
+            MouseButton::Left => {
+                self.selected_entity_id = self.entity_under_cursor();
+            }
+            MouseButton::Right => {
+                let x = self.game_mouse_x;
+                let y = self.game_mouse_y;
+                if let Some(e) = self.targetable_entity_under_cursor() {
+                    self.run_command(Command::SetTarget(Target::Entity(e)));
+                } else {
+                    self.run_command(Command::SetTarget(Target::Position(Point::new(x, y))));
+                }
+                self.particles
+                    .push(Box::new(particle::RightClick::new(x, y)))
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_mouse_motion(&mut self, x: f64, y: f64) {
+        self.screen_mouse_x = x;
+        self.screen_mouse_y = y;
+        self.game_mouse_x = self.viewport.x_screen_to_game(x);
+        self.game_mouse_y = self.viewport.y_screen_to_game(y);
+        self.hovered_entity_id = self.entity_under_cursor();
     }
 
     fn entity_under_cursor(&mut self) -> Option<EntityID> {
@@ -241,13 +253,6 @@ impl Client {
             }
         }
         None
-    }
-
-    fn handle_input(&mut self, input: Input) {
-        match input {
-
-            _ => {}
-        }
     }
 
     pub fn connect(&mut self, addr: net::SocketAddrV4) -> io::Result<()> {

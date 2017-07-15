@@ -264,6 +264,11 @@ impl Game {
                     x => x,
                 };
             }
+
+            Command::UseAbility {
+                ability_id,
+                mouse_position,
+            } => {}
         }
     }
 
