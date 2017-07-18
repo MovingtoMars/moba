@@ -5,7 +5,7 @@ use std::thread;
 use std::time;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use piston_window::{self, Transformed, Window, Input, Button, MouseButton, Motion};
+use piston_window::{self, Transformed, Window, Input, Button, MouseButton, Motion, Key};
 
 use common::*;
 
@@ -114,6 +114,7 @@ impl Client {
                 Input::Press(button) => {
                     match button {
                         Button::Mouse(mouse_button) => self.handle_mouse_press(mouse_button),
+                        Button::Keyboard(key) => self.handle_keyboard_press(key),
                         _ => {}
                     }
                 }
@@ -219,6 +220,20 @@ impl Client {
                 self.particles
                     .push(Box::new(particle::RightClick::new(x, y)))
             }
+            _ => {}
+        }
+    }
+
+    fn handle_keyboard_press(&mut self, key: Key) {
+        match key {
+            Key::Q => {
+                let command = Command::UseAbility {
+                    ability_id: 0,
+                    mouse_position: Some(Point::new(self.game_mouse_x, self.game_mouse_y)),
+                };
+                self.run_command(command);
+            }
+
             _ => {}
         }
     }

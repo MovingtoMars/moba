@@ -252,8 +252,9 @@ impl Game {
         hb.shape.contains_point(&hb_pos, &Point2::new(x, y))
     }
 
-    pub fn run_command(&mut self, command: Command, origin: EntityID) {
+    pub fn run_command(&mut self, command: Command, origin: EntityID) -> Vec<Event> {
         let entity = self.get_entity(origin).unwrap();
+        let mut events = Vec::new();
 
         match command {
             Command::SetTarget(target) => {
@@ -268,8 +269,21 @@ impl Game {
             Command::UseAbility {
                 ability_id,
                 mouse_position,
-            } => {}
+            } => {
+                let eid = self.next_entity_id();
+                let mut positionc = self.world.read::<Position>();
+                let p = positionc.get(entity).unwrap().point;
+                let e = Event::AddProjectile {
+                    id: eid,
+                    position: p,
+                    target: Target::Position(mouse_position.unwrap()),
+                    damage: 10,
+                };
+                events.push(e);
+            }
         }
+
+        events
     }
 
     pub fn remove_entity(&mut self, id: EntityID) {

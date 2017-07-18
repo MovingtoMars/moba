@@ -158,7 +158,9 @@ impl Server {
         }
 
         for (command, id) in commands {
-            self.game.run_command(command, id);
+            let es = self.game.run_command(command, id);
+            self.game.run_events(&es);
+            events.extend(es);
         }
 
         events.extend(self.game.tick(time));
