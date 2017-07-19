@@ -1,5 +1,5 @@
 use std::ops::{Sub, Mul};
-use na::{Point2, Vector2};
+use na::{Point2, Vector2, Isometry2};
 
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
@@ -13,8 +13,12 @@ impl Point {
         Point { x: x, y: y }
     }
 
-    pub fn distance_to(self: Point, p: Point) -> f64 {
+    pub fn distance_to(self, p: Point) -> f64 {
         (p - self).norm()
+    }
+
+    pub fn into_isometry(self, angle: f64) -> Isometry2<f64> {
+        Isometry2::new(Vector2::from(self), angle)
     }
 }
 

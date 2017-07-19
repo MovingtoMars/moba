@@ -7,7 +7,7 @@ pub enum Event {
     AddHero {
         id: EntityID,
         position: Point,
-        hero: Hero,
+        hero: logic::HeroKind,
         name: String,
         team: Option<Team>,
     },
@@ -16,6 +16,8 @@ pub enum Event {
         position: Point,
         target: Target,
         damage: u16,
+        team: Option<Team>,
+        owner: EntityID,
     },
     DamageEntity { id: EntityID, damage: u16 },
     RemoveEntity(EntityID),

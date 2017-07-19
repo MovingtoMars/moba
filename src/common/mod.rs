@@ -20,3 +20,5 @@ pub use self::vector::*;
 
 mod command;
 pub use self::command::*;
+
+pub mod logic;

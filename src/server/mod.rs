@@ -5,7 +5,7 @@ use std::time;
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 
-use common::{self, Message, Stream, Game, Hero, Point, EntityID, Event, Team};
+use common::{self, Message, Stream, Game, logic, Point, EntityID, Event, Team};
 
 const TICKS_PER_SECOND: u32 = 60;
 
@@ -81,7 +81,7 @@ impl Server {
             for (mut stream, name, team) in jp {
                 let id = self.game.next_entity_id();
                 let position = Point::new(0.0, 0.0);
-                let hero = Hero::John;
+                let hero = logic::HeroKind::John;
                 stream
                     .write_message(Message::SetPlayerEntityID(id))
                     .unwrap();

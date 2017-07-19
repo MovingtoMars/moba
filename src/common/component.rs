@@ -6,6 +6,7 @@ use ncollide;
 use na;
 
 type Shape = ncollide::shape::Shape<na::Point2<f64>, na::Isometry2<f64>>;
+type ShapeHandle = ncollide::shape::ShapeHandle<na::Point2<f64>, na::Isometry2<f64>>;
 
 #[derive(Debug, Clone)]
 pub struct Hitpoints {
@@ -66,6 +67,7 @@ impl specs::Component for Position {
 
 pub struct Hitbox {
     pub shape: Box<Shape>,
+    pub shape_handle: ShapeHandle,
 }
 
 impl specs::Component for Hitbox {
@@ -73,8 +75,13 @@ impl specs::Component for Hitbox {
 }
 
 impl Hitbox {
-    pub fn new<S: ncollide::shape::Shape<na::Point2<f64>, na::Isometry2<f64>>>(shape: S) -> Self {
-        Hitbox { shape: Box::new(shape) }
+    pub fn new<S: Clone + ncollide::shape::Shape<na::Point2<f64>, na::Isometry2<f64>>>(
+        shape: S,
+    ) -> Self {
+        Hitbox {
+            shape: Box::new(shape.clone()),
+            shape_handle: ShapeHandle::new(shape),
+        }
     }
 
     pub fn new_ball(radius: f64) -> Self {
@@ -93,6 +100,7 @@ impl Hitbox {
 #[derive(Clone, Debug)]
 pub struct Projectile {
     pub damage: u16,
+    pub owner: EntityID,
 }
 
 impl specs::Component for Projectile {
@@ -101,7 +109,7 @@ impl specs::Component for Projectile {
 
 #[derive(Clone, Debug)]
 pub struct Player {
-    pub hero: Hero,
+    pub hero: logic::HeroKind,
     pub name: String,
 }
 

@@ -6,37 +6,6 @@ use specs;
 
 use common::*;
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug, PartialEq, Eq)]
-pub enum Hero {
-    John,
-}
-
-impl Hero {
-    pub fn radius(self) -> f64 {
-        match self {
-            Hero::John => 50.0,
-        }
-    }
-
-    pub fn speed(self) -> f64 {
-        match self {
-            Hero::John => 200.0,
-        }
-    }
-
-    pub fn range(self) -> f64 {
-        match self {
-            Hero::John => 200.0,
-        }
-    }
-
-    pub fn attack_speed(self) -> f64 {
-        match self {
-            Hero::John => 0.8,
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Target {
     Nothing,
@@ -91,7 +60,7 @@ impl Game {
     pub fn add_player(
         &mut self,
         id: EntityID,
-        hero: Hero,
+        hero: logic::HeroKind,
         name: String,
         position: Point,
         team: Option<Team>,
@@ -136,11 +105,13 @@ impl Game {
         position: Point,
         target: Target,
         damage: u16,
+        team: Option<Team>,
+        owner: EntityID,
     ) -> EntityID {
         self.add_entity(id, EntityKind::Projectile, |entity| {
-            entity
+            let mut e = entity
                 .with(Position { point: position })
-                .with(Projectile { damage })
+                .with(Projectile { damage, owner })
                 .with(Renderable {
                     radius: 5.0,
                     colour: [1.0, 0.0, 0.0, 1.0],
@@ -150,7 +121,13 @@ impl Game {
                     speed: 800.0,
                     target: target,
                 })
-                .with(Velocity::new(0.0, 0.0))
+                .with(Velocity::new(0.0, 0.0));
+
+            if let Some(team) = team {
+                e = e.with(team);
+            }
+
+            e
         })
     }
 
@@ -271,13 +248,16 @@ impl Game {
                 mouse_position,
             } => {
                 let eid = self.next_entity_id();
-                let mut positionc = self.world.read::<Position>();
+                let positionc = self.world.read::<Position>();
+                let teamc = self.world.read::<Team>();
                 let p = positionc.get(entity).unwrap().point;
                 let e = Event::AddProjectile {
                     id: eid,
                     position: p,
                     target: Target::Position(mouse_position.unwrap()),
                     damage: 10,
+                    owner: origin,
+                    team: teamc.get(entity).cloned(),
                 };
                 events.push(e);
             }
@@ -319,13 +299,16 @@ impl Game {
                 position,
                 target,
                 damage,
+                owner,
+                team,
             } => {
-                self.add_projectile(id, position, target, damage);
+                self.add_projectile(id, position, target, damage, team, owner);
             }
             Event::DamageEntity { id, damage } => {
-                let e = self.get_entity(id).unwrap();
-                let mut hitpointsc = self.world.write::<Hitpoints>();
-                hitpointsc.get_mut(e).unwrap().damage(damage);
+                if let Some(e) = self.get_entity(id) {
+                    let mut hitpointsc = self.world.write::<Hitpoints>();
+                    hitpointsc.get_mut(e).map(|x| x.damage(damage)); // XXX
+                }
             }
         }
     }
@@ -384,12 +367,15 @@ impl Game {
                     let pos = posc.get(e).unwrap().point;
                     let unit = unitc.get(e).unwrap();
                     let proj = projectilec.get(e).unwrap();
+                    let team = teamc.get(e).cloned();
 
                     events.push(Event::AddProjectile {
-                        id: id,
+                        id,
                         position: pos,
                         target: unit.target.clone(),
                         damage: proj.damage,
+                        team,
+                        owner: proj.owner,
                     });
                 }
             }

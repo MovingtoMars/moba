@@ -1,11 +1,13 @@
 use std::sync::{Arc, Mutex};
-use std::collections::HashMap;
 
+use std::collections::HashMap;
 use common::*;
 use specs::{self, Join};
+use ncollide::world::{CollisionWorld, CollisionGroups, GeometricQueryType};
+use na::{Point2, Isometry2, Vector2};
 
-type RS<'a, T> = specs::ReadStorage<'a, T>;
-type WS<'a, T> = specs::WriteStorage<'a, T>;
+pub type RS<'a, T> = specs::ReadStorage<'a, T>;
+pub type WS<'a, T> = specs::WriteStorage<'a, T>;
 
 pub fn register_systems<'a, 'b>(
     d: specs::DispatcherBuilder<'a, 'b>,
@@ -13,6 +15,10 @@ pub fn register_systems<'a, 'b>(
     let d = d.add(UpdateVelocitySystem, "UpdateVelocitySystem", &[]);
     let d = d.add(MotionSystem, "MotionSystem", &["UpdateVelocitySystem"]);
     let d = d.add_barrier();
+
+    let d = d.add(CollisionSystem, "CollisionSystem", &[]);
+    let d = d.add_barrier();
+
     let d = d.add(BasicAttackerSystem, "BasicAttackerSystem", &[]);
     let d = d.add(ProjectileSystem, "ProjectileSystem", &[]); // XXX: race condition with BasicAttackerSystem?
 
@@ -21,6 +27,7 @@ pub fn register_systems<'a, 'b>(
 
 pub struct ContextInner {
     events: Vec<Event>,
+    collisions: HashMap<EntityID, Vec<Collision>>, // TODO separate RWMutex
 }
 
 #[derive(Clone)]
@@ -39,7 +46,10 @@ impl Context {
     ) -> Self {
         Context {
             time,
-            inner: Arc::new(Mutex::new(ContextInner { events: Vec::new() })),
+            inner: Arc::new(Mutex::new(ContextInner {
+                events: Vec::new(),
+                collisions: HashMap::new(),
+            })),
             entity_map,
             next_entity_id,
         }
@@ -47,6 +57,38 @@ impl Context {
 
     pub fn push_event(&self, event: Event) {
         self.inner.lock().unwrap().events.push(event);
+    }
+
+    pub fn push_collision(&self, collision: Collision) {
+        let collisions = &mut self.inner.lock().unwrap().collisions;
+
+        collisions
+            .entry(collision.obj1)
+            .or_insert_with(|| Vec::new())
+            .push(collision);
+        collisions
+            .entry(collision.obj2)
+            .or_insert_with(|| Vec::new())
+            .push(collision.flip());
+    }
+
+    /// In all returned collisions, `this == collision.obj1`
+    pub fn get_collisions(&self, this: EntityID, other: Option<EntityID>) -> Vec<Collision> {
+        if Some(this) == other {
+            // we don't allow self-collisions
+            println!("Requested self-collisions!");
+            return Vec::new();
+        }
+
+        if let Some(collisions) = self.inner.lock().unwrap().collisions.get(&this) {
+            collisions
+                .into_iter()
+                .filter(|c| other.is_none() || other.unwrap() == c.obj2)
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        }
     }
 
     pub fn events(&self) -> Vec<Event> {
@@ -179,6 +221,8 @@ impl<'a> specs::System<'a> for MotionSystem {
 pub struct BasicAttackerData<'a> {
     positionc: RS<'a, Position>,
     unitc: RS<'a, Unit>,
+    teamc: RS<'a, Team>,
+    idc: RS<'a, EntityID>,
     basic_attackerc: WS<'a, BasicAttacker>,
 
     c: specs::Fetch<'a, Context>,
@@ -190,9 +234,17 @@ impl<'a> specs::System<'a> for BasicAttackerSystem {
     type SystemData = BasicAttackerData<'a>;
 
     fn run(&mut self, mut data: Self::SystemData) {
-        for (position, unit, mut basic_attacker) in
-            (&data.positionc, &data.unitc, &mut data.basic_attackerc).join()
+
+        for (&id, position, unit, mut basic_attacker) in
+            (
+                &data.idc,
+                &data.positionc,
+                &data.unitc,
+                &mut data.basic_attackerc,
+            ).join()
         {
+            let entity = data.c.get_entity(id).unwrap();
+
             if basic_attacker.attack_speed == 0.0 {
                 continue;
             }
@@ -214,6 +266,8 @@ impl<'a> specs::System<'a> for BasicAttackerSystem {
                         position: position.point,
                         target: Target::Entity(e),
                         damage: 5,
+                        team: data.teamc.get(entity).cloned(),
+                        owner: id,
                     })
                 }
                 _ => {}
@@ -224,11 +278,11 @@ impl<'a> specs::System<'a> for BasicAttackerSystem {
 
 #[derive(SystemData)]
 pub struct ProjectileData<'a> {
-    positionc: RS<'a, Position>,
     unitc: RS<'a, Unit>,
     idc: RS<'a, EntityID>,
-    hitboxc: RS<'a, Hitbox>,
     projectilec: RS<'a, Projectile>,
+    teamc: RS<'a, Team>,
+    hitpointsc: RS<'a, Hitpoints>,
 
     c: specs::Fetch<'a, Context>,
 }
@@ -239,33 +293,96 @@ impl<'a> specs::System<'a> for ProjectileSystem {
     type SystemData = ProjectileData<'a>;
 
     fn run(&mut self, data: Self::SystemData) {
-        for (id, position, unit, projectile, hitbox) in
-            (
-                &data.idc,
-                &data.positionc,
-                &data.unitc,
-                &data.projectilec,
-                &data.hitboxc,
-            ).join()
-        {
-            //
+        for (&id, unit, projectile) in (&data.idc, &data.unitc, &data.projectilec).join() {
             let target_entity_id = match unit.target {
-                Target::Entity(e) => e,
-                _ => continue,
+                Target::Entity(e) => Some(e),
+                _ => None,
             };
-            let target_entity = data.c.get_entity(target_entity_id).unwrap();
 
-            if data.hitboxc.get(target_entity).unwrap().contains_point(
-                position.point.x,
-                position.point.y,
-                data.positionc.get(target_entity).unwrap().point.into(),
-            ) {
-                data.c.push_event(Event::DamageEntity {
-                    id: target_entity_id,
-                    damage: projectile.damage,
-                });
-                data.c.push_event(Event::RemoveEntity(*id));
+            for collision in &data.c.get_collisions(id, target_entity_id) {
+                if projectile.owner == collision.obj2 {
+                    continue;
+                }
+
+                if logic::can_attack(
+                    data.c.get_entity(id).unwrap(),
+                    data.c.get_entity(collision.obj2).unwrap(),
+                    &data.teamc,
+                    &data.hitpointsc,
+                ) {
+                    data.c.push_event(Event::DamageEntity {
+                        id: collision.obj2,
+                        damage: projectile.damage,
+                    });
+                    data.c.push_event(Event::RemoveEntity(id));
+                    break;
+                } else if target_entity_id.is_some() {
+                    eprintln!("E1");
+                }
             }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct Collision {
+    pub obj1: EntityID,
+    pub obj2: EntityID,
+    pub normal: Vector2<f64>,
+    pub depth: f64,
+}
+
+impl Collision {
+    pub fn flip(mut self) -> Self {
+        use std;
+        std::mem::swap(&mut self.obj1, &mut self.obj2);
+
+        self.normal = self.normal * -1.0; // XXX is this right?
+
+        self
+    }
+}
+
+#[derive(SystemData)]
+pub struct CollisionData<'a> {
+    hitboxc: RS<'a, Hitbox>,
+    idc: RS<'a, EntityID>,
+    positionc: RS<'a, Position>,
+
+    c: specs::Fetch<'a, Context>,
+}
+
+pub struct CollisionSystem;
+
+impl<'a> specs::System<'a> for CollisionSystem {
+    type SystemData = CollisionData<'a>;
+
+    fn run(&mut self, data: Self::SystemData) {
+        let mut collision_world: CollisionWorld<Point2<f64>, Isometry2<f64>, ()> =
+            CollisionWorld::new(0.1, false);
+
+        for (id, hitbox, position) in (&data.idc, &data.hitboxc, &data.positionc).join() {
+            collision_world.deferred_add(
+                id.0 as usize,
+                position.point.into_isometry(0.0),
+                hitbox.shape_handle.clone(),
+                CollisionGroups::new(),
+                GeometricQueryType::Contacts(0.0),
+                (),
+            );
+        }
+
+        collision_world.update();
+
+        for (obj1, obj2, contact) in collision_world.contacts() {
+            let collision = Collision {
+                obj1: EntityID(obj1.uid as u32),
+                obj2: EntityID(obj2.uid as u32),
+                depth: contact.depth,
+                normal: contact.normal,
+            };
+
+            data.c.push_collision(collision);
         }
     }
 }
