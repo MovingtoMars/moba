@@ -60,17 +60,21 @@ impl Fonts {
         let regular = Glyphs::new(
             "./assets/fonts/NotoSans-unhinted/NotoSans-Regular.ttf",
             factory.clone(),
-            TextureSettings::new(),
+            texture_settings(),
         ).unwrap();
 
         let bold = Glyphs::new(
             "./assets/fonts/NotoSans-unhinted/NotoSans-Bold.ttf",
             factory.clone(),
-            TextureSettings::new(),
+            texture_settings(),
         ).unwrap();
 
         Fonts { regular, bold }
     }
+}
+
+fn texture_settings() -> TextureSettings {
+    TextureSettings::new().compress(true)
 }
 
 pub fn render(
