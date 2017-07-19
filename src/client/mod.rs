@@ -6,6 +6,7 @@ use std::time;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use piston_window::{self, Transformed, Window, Input, Button, MouseButton, Motion, Key};
+use sdl2_window::Sdl2Window;
 
 use common::*;
 
@@ -66,10 +67,10 @@ impl Client {
         player_entity_id: Arc<Mutex<Option<EntityID>>>,
     ) -> io::Result<()> {
 
-        let mut window: piston_window::PistonWindow =
+        let mut window: piston_window::PistonWindow<Sdl2Window> =
             piston_window::WindowSettings::new("moba", [1280, 720])
                 .exit_on_esc(true)
-                .samples(4)
+                .samples(1)
                 .vsync(true)
                 .build()
                 .unwrap();
@@ -125,9 +126,9 @@ impl Client {
         self.stream.as_mut().unwrap().write_message(Message::Quit)
     }
 
-    fn render(
+    fn render<W: piston_window::OpenGLWindow>(
         &mut self,
-        window: &mut piston_window::PistonWindow,
+        window: &mut piston_window::PistonWindow<W>,
         current_ping: &Arc<Mutex<u64>>,
         width: u32,
         last_render_time: &mut time::Instant,

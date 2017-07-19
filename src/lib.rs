@@ -16,6 +16,7 @@ extern crate gfx_device_gl;
 #[macro_use]
 extern crate shred_derive;
 extern crate shred;
+extern crate sdl2_window;
 
 pub mod common;
 pub mod client;
