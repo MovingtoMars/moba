@@ -224,8 +224,6 @@ impl Game {
             None => return false,
         };
 
-        let hb_pos = na::Isometry2::new(pos.point.into(), na::zero());
-
         hb.contains_point(pos.point.x, pos.point.y, Point2::new(x, y))
     }
 
