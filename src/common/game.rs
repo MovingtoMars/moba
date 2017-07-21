@@ -226,7 +226,7 @@ impl Game {
 
         let hb_pos = na::Isometry2::new(pos.point.into(), na::zero());
 
-        hb.shape_handle.contains_point(&hb_pos, &Point2::new(x, y)) // XXX
+        hb.contains_point(pos.point.x, pos.point.y, Point2::new(x, y))
     }
 
     pub fn run_command(&mut self, command: Command, origin: EntityID) -> Vec<Event> {
