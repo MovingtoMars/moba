@@ -3,6 +3,9 @@ name = "moba"
 version = "0.1.0"
 authors = ["MovingtoMars <liam@bumblebee.net.nz>"]
 
+[features]
+sdl2 = ["pistoncore-sdl2_window"]
+
 [dependencies]
 serde = "*"
 serde_derive = "*"
@@ -21,3 +24,4 @@ shred-derive = "*"
 
 [dependencies.pistoncore-sdl2_window]
 git = "https://github.com/PistonDevelopers/sdl2_window"
+optional = true

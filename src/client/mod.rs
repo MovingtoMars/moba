@@ -6,12 +6,33 @@ use std::time;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use piston_window::{self, Transformed, Window, Input, Button, MouseButton, Motion, Key};
+#[cfg(feature = "sdl2")]
 use sdl2_window::Sdl2Window;
 
 use common::*;
 
 mod render;
 use self::render::particle;
+
+#[cfg(not(feature = "sdl2"))]
+fn new_window() -> piston_window::PistonWindow {
+    piston_window::WindowSettings::new("moba", [1280, 720])
+        .exit_on_esc(true)
+        .samples(1)
+        .vsync(true)
+        .build()
+        .unwrap()
+}
+
+#[cfg(feature = "sdl2")]
+fn new_window() -> piston_window::PistonWindow<Sdl2Window> {
+    piston_window::WindowSettings::new("moba", [1280, 720])
+        .exit_on_esc(true)
+        .samples(1)
+        .vsync(true)
+        .build()
+        .unwrap()
+}
 
 pub struct Client {
     name: String,
@@ -67,13 +88,7 @@ impl Client {
         player_entity_id: Arc<Mutex<Option<EntityID>>>,
     ) -> io::Result<()> {
 
-        let mut window: piston_window::PistonWindow<Sdl2Window> =
-            piston_window::WindowSettings::new("moba", [1280, 720])
-                .exit_on_esc(true)
-                .samples(1)
-                .vsync(true)
-                .build()
-                .unwrap();
+        let mut window = new_window();
 
         let mut fonts = render::Fonts::new(window.factory.clone());
 
