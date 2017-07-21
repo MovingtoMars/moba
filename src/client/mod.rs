@@ -5,7 +5,7 @@ use std::thread;
 use std::time;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use piston_window::{self, Transformed, Window, Input, Button, MouseButton, Motion, Key};
+use piston_window::{self, Transformed, Window, Input, Button, MouseButton, Motion, Key, EventLoop};
 #[cfg(feature = "sdl2")]
 use sdl2_window::Sdl2Window;
 
@@ -89,6 +89,7 @@ impl Client {
     ) -> io::Result<()> {
 
         let mut window = new_window();
+        window.set_ups(60);
 
         let mut fonts = render::Fonts::new(window.factory.clone());
 
