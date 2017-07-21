@@ -66,7 +66,6 @@ impl specs::Component for Position {
 }
 
 pub struct Hitbox {
-    pub shape: Box<Shape>,
     pub shape_handle: ShapeHandle,
 }
 
@@ -78,10 +77,7 @@ impl Hitbox {
     pub fn new<S: Clone + ncollide::shape::Shape<na::Point2<f64>, na::Isometry2<f64>>>(
         shape: S,
     ) -> Self {
-        Hitbox {
-            shape: Box::new(shape.clone()),
-            shape_handle: ShapeHandle::new(shape),
-        }
+        Hitbox { shape_handle: ShapeHandle::new(shape) }
     }
 
     pub fn new_ball(radius: f64) -> Self {
@@ -90,7 +86,7 @@ impl Hitbox {
 
     pub fn contains_point(&self, x: f64, y: f64, point: na::Point2<f64>) -> bool {
         use ncollide::query::PointQuery;
-        self.shape.contains_point(
+        self.shape_handle.contains_point(
             &na::Isometry2::new(na::Vector2::new(x, y), na::zero()),
             &point,
         )
