@@ -10,7 +10,7 @@ $ cd moba
 $ cargo build --release
 ```
 
-Two binaries are build, `client` and `server`.
+Two binaries are built, `client` and `server`.
 
 In one terminal, run `./target/release/server`.
 
