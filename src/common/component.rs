@@ -77,7 +77,9 @@ impl Hitbox {
     pub fn new<S: Clone + ncollide::shape::Shape<na::Point2<f64>, na::Isometry2<f64>>>(
         shape: S,
     ) -> Self {
-        Hitbox { shape_handle: ShapeHandle::new(shape) }
+        Hitbox {
+            shape_handle: ShapeHandle::new(shape),
+        }
     }
 
     pub fn new_ball(radius: f64) -> Self {
@@ -89,6 +91,29 @@ impl Hitbox {
         self.shape_handle.contains_point(
             &na::Isometry2::new(na::Vector2::new(x, y), na::zero()),
             &point,
+        )
+    }
+
+    pub fn distance_to_point(&self, self_pos: Point, other_pos: Point) -> f64 {
+        use ncollide::query::PointQuery;
+        self.shape_handle.distance_to_point(
+            &na::Isometry2::new(self_pos.into(), na::zero()),
+            &other_pos.into(),
+            true,
+        )
+    }
+
+    pub fn shortest_distance_to(
+        &self,
+        self_pos: Point,
+        other: &ShapeHandle,
+        other_pos: Point,
+    ) -> f64 {
+        ncollide::query::distance(
+            &na::Isometry2::new(self_pos.into(), na::zero()),
+            &*self.shape_handle,
+            &na::Isometry2::new(other_pos.into(), na::zero()),
+            &**other,
         )
     }
 }
@@ -132,6 +157,7 @@ impl specs::Component for Renderable {
 pub struct BasicAttacker {
     pub attack_speed: f64, // attacks_per_second
     pub time_until_next_attack: f64,
+    pub range: f64,
 }
 
 impl specs::Component for BasicAttacker {
@@ -155,7 +181,9 @@ pub struct Velocity {
 
 impl Velocity {
     pub fn new(x: f64, y: f64) -> Self {
-        Velocity { vector: Vector { x, y } }
+        Velocity {
+            vector: Vector { x, y },
+        }
     }
 }
 

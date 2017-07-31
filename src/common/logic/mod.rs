@@ -80,3 +80,20 @@ pub fn can_attack(
 
     true
 }
+
+pub fn shortest_distance_between(
+    this_point: Point,
+    other_point: Point,
+    this_hitbox: Option<&Hitbox>,
+    other_hitbox: Option<&Hitbox>,
+) -> f64 {
+    match (this_hitbox, other_hitbox) {
+        (Some(shb), Some(thb)) => {
+            shb.shortest_distance_to(this_point, &thb.shape_handle, other_point)
+        }
+        (Some(shb), None) => shb.distance_to_point(this_point, other_point),
+        (None, Some(thb)) => thb.distance_to_point(this_point, other_point),
+        (None, None) => (other_point - this_point).norm(),
+    }
+
+}

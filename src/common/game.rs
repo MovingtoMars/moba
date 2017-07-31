@@ -84,6 +84,7 @@ impl Game {
                 .with(BasicAttacker {
                     attack_speed: hero.attack_speed(),
                     time_until_next_attack: 0.0,
+                    range: hero.range(),
                 })
                 .with(Hitpoints::new_at_max(50))
                 .with(Velocity::new(0.0, 0.0));

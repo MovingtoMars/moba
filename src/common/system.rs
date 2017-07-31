@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
 use common::*;
 use specs::{self, Join};
-use ncollide::world::{CollisionWorld, CollisionGroups, GeometricQueryType};
-use na::{Point2, Isometry2, Vector2};
+use ncollide::world::{CollisionGroups, CollisionWorld, GeometricQueryType};
+use na::{Isometry2, Point2, Vector2};
 
 pub type RS<'a, T> = specs::ReadStorage<'a, T>;
 pub type WS<'a, T> = specs::WriteStorage<'a, T>;
@@ -114,9 +114,10 @@ pub struct UpdateVelocityData<'a> {
     velocityc: WS<'a, Velocity>,
     positionc: RS<'a, Position>,
     idc: RS<'a, EntityID>,
-    playerc: RS<'a, Player>,
     hitpointsc: RS<'a, Hitpoints>,
     teamc: RS<'a, Team>,
+    basic_attackerc: RS<'a, BasicAttacker>,
+    hitboxc: RS<'a, Hitbox>,
 
     c: specs::Fetch<'a, Context>,
 }
@@ -129,33 +130,44 @@ impl<'a> specs::System<'a> for UpdateVelocitySystem {
     fn run(&mut self, mut data: Self::SystemData) {
         let time = data.c.time;
 
-        for (id, unit, velocity, position) in
+        for (&id, unit, velocity, position) in
             (&data.idc, &data.unitc, &mut data.velocityc, &data.positionc).join()
         {
             let speed = unit.speed;
+            let hitbox = data.hitboxc.get(data.c.get_entity(id).unwrap());
 
             *velocity = match unit.target {
                 Target::Nothing => Velocity::new(0.0, 0.0),
-                Target::Position(p) => calculate_velocity(position.point, p, speed, time, 0.0),
+                Target::Position(p) => {
+                    calculate_velocity(position.point, p, hitbox, None, speed, time, None)
+                }
                 Target::Entity(e) => {
                     let e = data.c.get_entity(e).unwrap();
                     let target = data.positionc.get(e).unwrap();
 
-                    let range = data.playerc
-                        .get(data.c.get_entity(*id).unwrap())
-                        .map(|player| player.hero.range())
-                        .unwrap_or(0.0); // XXX replace with component::BasicAttacker
+                    let range = data.basic_attackerc
+                        .get(data.c.get_entity(id).unwrap())
+                        .map(|ba| ba.range);
 
                     let attackable = data.hitpointsc.get(e).is_some();
 
-                    let self_team = data.teamc.get(data.c.get_entity(*id).unwrap());
+                    let self_team = data.teamc.get(data.c.get_entity(id).unwrap());
                     let target_team = data.teamc.get(e);
-                    let attackable = attackable && (target_team == None || self_team != target_team);
-                    let range = if attackable { range } else { 0.0 };
+                    let target_hitbox = data.hitboxc.get(e);
+                    let attackable =
+                        attackable && (target_team == None || self_team != target_team);
+                    let range = if attackable { range } else { None };
 
                     /// XXX: attackable component
-
-                    calculate_velocity(position.point, target.point, speed, time, range)
+                    calculate_velocity(
+                        position.point,
+                        target.point,
+                        hitbox,
+                        target_hitbox,
+                        speed,
+                        time,
+                        range,
+                    )
                 }
             };
         }
@@ -165,18 +177,25 @@ impl<'a> specs::System<'a> for UpdateVelocitySystem {
 fn calculate_velocity(
     source: Point,
     target: Point,
+    source_hitbox: Option<&Hitbox>,
+    target_hitbox: Option<&Hitbox>,
     mut speed: f64,
     time: f64,
-    range: f64,
+    range: Option<f64>,
 ) -> Velocity {
     let mut vector = target - source;
     let mut d = vector.norm();
 
-    if d - range > 0.0 {
-        vector = vector.with_norm(d - range);
-        d = vector.norm();
-    } else {
-        return Velocity::default();
+    let shortest_distance =
+        logic::shortest_distance_between(source, target, source_hitbox, target_hitbox);
+
+    if let Some(range) = range {
+        if shortest_distance > range {
+            vector = vector.with_norm(shortest_distance - range + 4.0);
+            d = vector.norm();
+        } else {
+            return Velocity::default();
+        }
     }
 
     if speed * time > d {
@@ -184,7 +203,9 @@ fn calculate_velocity(
     }
     let ratio = speed / d;
 
-    Velocity { vector: vector * ratio }
+    Velocity {
+        vector: vector * ratio,
+    }
 }
 
 #[derive(SystemData)]
@@ -224,6 +245,7 @@ pub struct BasicAttackerData<'a> {
     teamc: RS<'a, Team>,
     idc: RS<'a, EntityID>,
     basic_attackerc: WS<'a, BasicAttacker>,
+    hitboxc: RS<'a, Hitbox>,
 
     c: specs::Fetch<'a, Context>,
 }
@@ -235,13 +257,13 @@ impl<'a> specs::System<'a> for BasicAttackerSystem {
 
     fn run(&mut self, mut data: Self::SystemData) {
 
-        for (&id, position, unit, mut basic_attacker) in
-            (
-                &data.idc,
-                &data.positionc,
-                &data.unitc,
-                &mut data.basic_attackerc,
-            ).join()
+        for (&id, hitbox, position, unit, mut basic_attacker) in (
+            &data.idc,
+            &data.hitboxc,
+            &data.positionc,
+            &data.unitc,
+            &mut data.basic_attackerc,
+        ).join()
         {
             let entity = data.c.get_entity(id).unwrap();
 
@@ -259,12 +281,24 @@ impl<'a> specs::System<'a> for BasicAttackerSystem {
             }
 
             match unit.target {
-                Target::Entity(e) => {
+                Target::Entity(target_id) => {
+                    let target_e = data.c.get_entity(target_id).unwrap();
+
+                    if basic_attacker.range <
+                        logic::shortest_distance_between(
+                            position.point,
+                            data.positionc.get(target_e).unwrap().point,
+                            Some(hitbox),
+                            data.hitboxc.get(target_e),
+                        ) {
+                        continue;
+                    }
+
                     basic_attacker.time_until_next_attack = 1.0 / basic_attacker.attack_speed;
                     data.c.push_event(Event::AddProjectile {
                         id: data.c.next_entity_id(),
                         position: position.point,
-                        target: Target::Entity(e),
+                        target: Target::Entity(target_id),
                         damage: 5,
                         team: data.teamc.get(entity).cloned(),
                         owner: id,
