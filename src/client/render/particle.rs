@@ -34,7 +34,7 @@ impl Particle for RightClick {
     }
 
     fn render(&mut self, viewport: Viewport, c: Context, g: &mut G2d) {
-        let radius = 10.0 * self.time / 0.4;
+        let radius = 10.0 * self.time / 0.3;
         ellipse(
             [0.0, 0.0, 1.0, 1.0],
             [-radius, -radius, radius * 2.0, radius * 2.0],
